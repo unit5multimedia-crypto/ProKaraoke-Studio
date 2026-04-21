@@ -1,20 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# ProKaraoke Studio 🎤🎸
 
-# Run and deploy your AI Studio app
+A local-first, zero-cost professional karaoke experience with real-time pitch scoring, custom video bumpers, and dynamic background engines.
 
-This contains everything you need to run your app locally.
+## 🚀 Quick Start (Local Development)
 
-View your app in AI Studio: https://ai.studio/apps/6bf0a3a3-3dd8-40b8-bdf9-99b736faf2fa
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
 
-## Run Locally
+2. **Set up Environment Variables:**
+   Create a `.env` file in the root directory:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key
+   GOOGLE_CLIENT_ID=your_google_id
+   GOOGLE_CLIENT_SECRET=your_google_secret
+   ```
 
-**Prerequisites:**  Node.js
+3. **Start the Studio:**
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+## 🌟 Key Features
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Headless Media Stage:** Seamless YouTube integration with all native widgets hidden for a true videoke feel.
+- **Vocal Engine:** Real-time pitch analysis and scoring with visual feedback labels.
+- **Dynamic Bumpers:** Custom video intros that play while the main track loads.
+- **Dual-View Sync:** Open a "Singer View" on a second monitor while controlling everything from the "Operator Console."
+- **AI-Powered Search:** Natural language searching that finds perfect karaoke versions on YouTube.
+
+## 🛠 Tech Stack
+
+- **React 18 + Vite**
+- **Express.js** (Custom Hybrid Server)
+- **Tailwind CSS + Motion**
+- **Google Gemini API** (Search & Logic)
+- **Web Audio API** (Pitch Detection)
+
+## 🤖 Development with AI Agents
+
+This project is designed to work with **GitHub Copilot** or other AI agents. See [AGENTS.md](./AGENTS.md) for specialized instructions and architectural patterns.
