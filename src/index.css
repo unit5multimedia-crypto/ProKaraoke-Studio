@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Outfit", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --color-brand-gold: #ffd700;
+  --color-brand-dark: #0a0a0a;
+  --color-brand-panel: #151619;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-dark text-white font-sans overflow-hidden;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-brand-panel/80 backdrop-blur-md border border-white/10 rounded-xl;
+  }
+
+  .input-label {
+    @apply text-[10px] uppercase tracking-widest text-white/50 mb-1 font-mono;
+  }
+
+  .knob-value {
+    @apply font-mono text-xs text-brand-gold;
+  }
+}
+
+/* Custom scrollbar for settings */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}

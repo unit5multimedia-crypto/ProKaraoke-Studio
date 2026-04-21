@@ -1,0 +1,8 @@
+{
+  "name": "ProKaraoke Studio",
+  "description": "A local-first, zero-cost professional karaoke experience with real-time pitch scoring, custom video bumpers, and dynamic background engines.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
