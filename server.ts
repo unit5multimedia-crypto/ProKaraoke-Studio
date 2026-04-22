@@ -6,7 +6,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
-dotenv.config();
+// Load .env explicitly from the current working directory
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+console.log("--- System Check ---");
+console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "DETECTED (Ends with " + process.env.GOOGLE_CLIENT_ID.slice(-5) + ")" : "MISSING");
+console.log("CWD:", process.cwd());
+console.log("--------------------");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
