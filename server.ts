@@ -6,13 +6,26 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
-// Load .env explicitly from the current working directory
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+import fs from "fs";
 
-console.log("--- System Check ---");
-console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "DETECTED (Ends with " + process.env.GOOGLE_CLIENT_ID.slice(-5) + ")" : "MISSING");
-console.log("CWD:", process.cwd());
-console.log("--------------------");
+// Load .env explicitly from the current working directory
+const envPath = path.resolve(process.cwd(), '.env');
+const envExists = fs.existsSync(envPath);
+const envResult = dotenv.config({ path: envPath });
+
+console.log("--- ProKaraoke Environment Diagnostic ---");
+console.log("Current Directory:", process.cwd());
+console.log(".env Path:", envPath);
+console.log(".env Exists:", envExists);
+if (envExists) {
+  const stats = fs.statSync(envPath);
+  console.log(".env Size:", stats.size, "bytes");
+}
+if (envResult.error) {
+  console.log(".env Load Error:", envResult.error.message);
+}
+console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? `Found (${process.env.GOOGLE_CLIENT_ID.substring(0, 5)}...)` : "MISSING");
+console.log("-----------------------------------------");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
