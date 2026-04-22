@@ -4,7 +4,6 @@ import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
 import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
-import { io } from 'socket.io-client';
 
 interface ControlPanelProps {
   settings: KaraokeSettings;
@@ -14,7 +13,6 @@ interface ControlPanelProps {
   onParseLyrics: (content: string) => void;
   onMediaUpload: (type: string, file: File, url: string) => void;
   playbackState: { currentTime: number; phase: any; isPlaying: boolean; duration: number };
-  localFiles?: File[];
 }
 
 export default function ControlPanel({
@@ -24,11 +22,10 @@ export default function ControlPanel({
   setSession,
   onParseLyrics,
   onMediaUpload,
-  playbackState,
-  localFiles = []
+  playbackState
 }: ControlPanelProps) {
 
-  const [activeTab, setActiveTab] = React.useState<'config' | 'maker' | 'queue' | 'search' | 'local' | 'visual'>('queue');
+  const [activeTab, setActiveTab] = React.useState<'config' | 'maker' | 'queue' | 'search'>('queue');
   const [makerLyrics, setMakerLyrics] = React.useState<string>("");
   const [makerLines, setMakerLines] = React.useState<string[]>([]);
   const [makerStep, setMakerStep] = React.useState(0);
@@ -56,30 +53,6 @@ export default function ControlPanel({
       return [];
     }
   });
-  const [fragmentShader, setFragmentShader] = React.useState<string>(`
-    precision mediump float;
-    uniform float iTime;
-    uniform vec2 iResolution;
-    uniform vec3 iAudioLow;
-    uniform vec3 iAudioMid;
-    uniform vec3 iAudioHigh;
-
-    void main() {
-      vec2 uv = gl_FragCoord.xy / iResolution.xy;
-      uv = uv * 2.0 - 1.0;
-      uv.x *= iResolution.x / iResolution.y;
-
-      vec3 color = vec3(0.0);
-      color.r = iAudioLow.x * 0.5 + sin(iTime + uv.x * 10.0) * 0.1;
-      color.g = iAudioMid.y * 0.5 + cos(iTime + uv.y * 8.0) * 0.1;
-      color.b = iAudioHigh.z * 0.5 + sin(iTime * 2.0 + length(uv) * 5.0) * 0.1;
-
-      float pattern = sin(uv.x * 20.0 + iTime) * sin(uv.y * 20.0 + iTime);
-      color += vec3(pattern * 0.1);
-
-      gl_FragColor = vec4(color, 1.0);
-    }
-  `);
 
   React.useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {
@@ -185,7 +158,7 @@ export default function ControlPanel({
     bc.close();
   };
 
-  const handleMakerCapture = () => {
+  const handleMakerCapture = React.useCallback(() => {
     const time = playbackState.currentTime;
     const line = makerLines[makerStep];
     if (!line) return;
@@ -193,7 +166,21 @@ export default function ControlPanel({
     const formatted = `[${formatTime(time)}-${formatTime(endTime)}] ${line}`;
     setMakerLyrics(prev => prev + (prev ? "\n" : "") + formatted);
     setMakerStep(s => s + 1);
-  };
+  }, [playbackState.currentTime, makerLines, makerStep]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in a textarea or input
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      
+      if (e.code === 'Space' && activeTab === 'maker' && playbackState.isPlaying && makerStep < makerLines.length) {
+        e.preventDefault();
+        handleMakerCapture();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, playbackState.isPlaying, makerStep, makerLines.length, handleMakerCapture]);
 
   const finalizeMaker = () => {
     onParseLyrics(makerLyrics);
@@ -297,7 +284,7 @@ export default function ControlPanel({
 
       {/* Mode Selectors */}
       <div className="px-4 flex border-b border-white/5 scroll-x-auto">
-        {(['queue', 'search', 'local', 'visual', 'config', 'maker'] as const).map(tab => (
+        {(['queue', 'search', 'config', 'maker'] as const).map(tab => (
           <button 
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -305,8 +292,6 @@ export default function ControlPanel({
           >
             {tab === 'queue' && <ListMusic size={12} />}
             {tab === 'search' && <Search size={12} />}
-            {tab === 'local' && <Video size={12} />}
-            {tab === 'visual' && <Palette size={12} />}
             {tab === 'config' && <Settings size={12} />}
             {tab === 'maker' && <Type size={12} />}
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -518,269 +503,6 @@ export default function ControlPanel({
           </div>
         )}
 
-        {activeTab === 'visual' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="input-label m-0 flex items-center gap-2 underline decoration-brand-gold/30">Shadertoy Visual Designer</h3>
-              <span className="text-[10px] font-mono text-white/20">GLSL Editor</span>
-            </div>
-
-            <div className="space-y-4">
-              <div className="p-4 bg-black/40 border border-white/10 rounded-xl">
-                <label className="block text-[10px] font-mono text-white/60 uppercase tracking-widest mb-2">Fragment Shader Code</label>
-                <textarea
-                  value={fragmentShader}
-                  onChange={(e) => {
-                    setFragmentShader(e.target.value);
-                    // Broadcast to all views
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: e.target.value });
-                    bc.close();
-                  }}
-                  className="w-full h-64 bg-black/60 border border-white/10 rounded-lg p-3 text-[11px] font-mono text-green-400 focus:outline-none focus:border-brand-gold resize-none"
-                  placeholder="Write your GLSL fragment shader here..."
-                />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    localStorage.setItem('karaoke_shader', fragmentShader);
-                    // Show success feedback
-                  }}
-                  className="px-3 py-2 bg-green-600/20 border border-green-600/40 rounded text-[10px] text-green-400 hover:bg-green-600/30 transition-all font-mono"
-                >
-                  Save Shader
-                </button>
-                <button
-                  onClick={() => {
-                    const saved = localStorage.getItem('karaoke_shader');
-                    if (saved) {
-                      setFragmentShader(saved);
-                      const bc = new BroadcastChannel('karaoke-sync');
-                      bc.postMessage({ type: 'SHADER_UPDATE', payload: saved });
-                      bc.close();
-                    }
-                  }}
-                  className="px-3 py-2 bg-blue-600/20 border border-blue-600/40 rounded text-[10px] text-blue-400 hover:bg-blue-600/30 transition-all font-mono"
-                >
-                  Load Shader
-                </button>
-                <button
-                  onClick={() => {
-                    const defaultShader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec3 iAudioLow;
-uniform vec3 iAudioMid;
-uniform vec3 iAudioHigh;
-
-void main() {
-  vec2 uv = gl_FragCoord.xy / iResolution.xy;
-  uv = uv * 2.0 - 1.0;
-  uv.x *= iResolution.x / iResolution.y;
-
-  vec3 color = vec3(0.0);
-  color.r = iAudioLow.x * 0.5 + sin(iTime + uv.x * 10.0) * 0.1;
-  color.g = iAudioMid.y * 0.5 + cos(iTime + uv.y * 8.0) * 0.1;
-  color.b = iAudioHigh.z * 0.5 + sin(iTime * 2.0 + length(uv) * 5.0) * 0.1;
-
-  float pattern = sin(uv.x * 20.0 + iTime) * sin(uv.y * 20.0 + iTime);
-  color += vec3(pattern * 0.1);
-
-  gl_FragColor = vec4(color, 1.0);
-}`;
-                    setFragmentShader(defaultShader);
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: defaultShader });
-                    bc.close();
-                  }}
-                  className="px-3 py-2 bg-red-600/20 border border-red-600/40 rounded text-[10px] text-red-400 hover:bg-red-600/30 transition-all font-mono"
-                >
-                  Reset
-                </button>
-              </div>
-                <button
-                  onClick={() => {
-                    const defaultShader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec3 iAudioLow;
-uniform vec3 iAudioMid;
-uniform vec3 iAudioHigh;
-
-void main() {
-  vec2 uv = gl_FragCoord.xy / iResolution.xy;
-  uv = uv * 2.0 - 1.0;
-  uv.x *= iResolution.x / iResolution.y;
-
-  vec3 color = vec3(0.0);
-  color.r = iAudioLow.x * 0.5 + sin(iTime + uv.x * 10.0) * 0.1;
-  color.g = iAudioMid.y * 0.5 + cos(iTime + uv.y * 8.0) * 0.1;
-  color.b = iAudioHigh.z * 0.5 + sin(iTime * 2.0 + length(uv) * 5.0) * 0.1;
-
-  float pattern = sin(uv.x * 20.0 + iTime) * sin(uv.y * 20.0 + iTime);
-  color += vec3(pattern * 0.1);
-
-  gl_FragColor = vec4(color, 1.0);
-}`;
-                    setFragmentShader(defaultShader);
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: defaultShader });
-                    bc.close();
-                  }}
-                  className="p-3 bg-white/5 border border-white/10 rounded-lg text-center text-[10px] text-white/60 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
-                >
-                  Audio Reactive Waves
-                </button>
-
-                <button
-                  onClick={() => {
-                    const tunnelShader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec3 iAudioLow;
-uniform vec3 iAudioMid;
-uniform vec3 iAudioHigh;
-
-void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / min(iResolution.x, iResolution.y);
-  
-  float audio = (iAudioLow.x + iAudioMid.y + iAudioHigh.z) / 3.0;
-  float radius = length(uv) + audio * 0.5;
-  float angle = atan(uv.y, uv.x);
-  
-  vec3 color = vec3(0.0);
-  color.r = sin(radius * 10.0 - iTime * 2.0 + angle * 3.0) * 0.5 + 0.5;
-  color.g = sin(radius * 8.0 - iTime * 1.5 + angle * 2.0) * 0.5 + 0.5;
-  color.b = sin(radius * 12.0 - iTime * 2.5 + angle * 4.0) * 0.5 + 0.5;
-  
-  color *= 1.0 - radius * 0.5;
-  gl_FragColor = vec4(color, 1.0);
-}`;
-                    setFragmentShader(tunnelShader);
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: tunnelShader });
-                    bc.close();
-                  }}
-                  className="p-3 bg-white/5 border border-white/10 rounded-lg text-center text-[10px] text-white/60 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
-                >
-                  Audio Tunnel
-                </button>
-
-                <button
-                  onClick={() => {
-                    const fractalShader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec3 iAudioLow;
-uniform vec3 iAudioMid;
-uniform vec3 iAudioHigh;
-
-vec3 palette(float t) {
-  vec3 a = vec3(0.5, 0.5, 0.5);
-  vec3 b = vec3(0.5, 0.5, 0.5);
-  vec3 c = vec3(1.0, 1.0, 1.0);
-  vec3 d = vec3(0.263, 0.416, 0.557);
-  return a + b * cos(6.28318 * (c * t + d));
-}
-
-void main() {
-  vec2 uv = (gl_FragCoord.xy * 2.0 - iResolution.xy) / iResolution.y;
-  vec2 uv0 = uv;
-  vec3 finalColor = vec3(0.0);
-  
-  float audio = (iAudioLow.x + iAudioMid.y + iAudioHigh.z) / 3.0;
-  
-  for(float i = 0.0; i < 4.0; i++) {
-    uv = fract(uv * 1.5) - 0.5;
-    
-    float d = length(uv) * exp(-length(uv0));
-    vec3 col = palette(length(uv0) + i * 0.4 + iTime * 0.4);
-    
-    d = sin(d * 8.0 + iTime) / 8.0;
-    d = abs(d);
-    d = pow(0.01 / d, 1.2);
-    
-    finalColor += col * d * (audio + 0.2);
-  }
-  
-  gl_FragColor = vec4(finalColor, 1.0);
-}`;
-                    setFragmentShader(fractalShader);
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: fractalShader });
-                    bc.close();
-                  }}
-                  className="p-3 bg-white/5 border border-white/10 rounded-lg text-center text-[10px] text-white/60 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
-                >
-                  Fractal Vortex
-                </button>
-
-                <button
-                  onClick={() => {
-                    const particleShader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec3 iAudioLow;
-uniform vec3 iAudioMid;
-uniform vec3 iAudioHigh;
-
-float random(vec2 st) {
-  return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-}
-
-void main() {
-  vec2 uv = gl_FragCoord.xy / iResolution.xy;
-  vec3 color = vec3(0.0);
-
-  float audio = (iAudioLow.x + iAudioMid.y + iAudioHigh.z) / 3.0;
-  
-  for(int i = 0; i < 100; i++) {
-    vec2 pos = vec2(
-      random(vec2(float(i), 0.0)) + sin(iTime * 0.5 + float(i)) * 0.1,
-      random(vec2(float(i), 1.0)) + cos(iTime * 0.3 + float(i)) * 0.1
-    );
-    float dist = distance(uv, pos);
-    float size = audio * 0.05 + 0.005;
-    vec3 particleColor = vec3(
-      random(vec2(float(i), 2.0)),
-      random(vec2(float(i), 3.0)),
-      random(vec2(float(i), 4.0))
-    );
-    color += particleColor * (1.0 - smoothstep(0.0, size, dist));
-  }
-
-  gl_FragColor = vec4(color, 1.0);
-}`;
-                    setFragmentShader(particleShader);
-                    const bc = new BroadcastChannel('karaoke-sync');
-                    bc.postMessage({ type: 'SHADER_UPDATE', payload: particleShader });
-                    bc.close();
-                  }}
-                  className="p-3 bg-white/5 border border-white/10 rounded-lg text-center text-[10px] text-white/60 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
-                >
-                  Dancing Particles
-                </button>
-              </div>
-
-              <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
-                <h4 className="text-[10px] font-mono text-white/60 uppercase tracking-widest mb-2">Available Uniforms</h4>
-                <div className="text-[9px] font-mono text-white/40 space-y-1">
-                  <div><span className="text-cyan-400">uniform float iTime;</span> - Time in seconds</div>
-                  <div><span className="text-cyan-400">uniform vec2 iResolution;</span> - Canvas resolution</div>
-                  <div><span className="text-cyan-400">uniform vec3 iAudioLow;</span> - Low frequency data (0-1)</div>
-                  <div><span className="text-cyan-400">uniform vec3 iAudioMid;</span> - Mid frequency data (0-1)</div>
-                  <div><span className="text-cyan-400">uniform vec3 iAudioHigh;</span> - High frequency data (0-1)</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'config' && (
           <div className="space-y-8 pb-12">
             {/* Playback Status */}
@@ -806,26 +528,6 @@ void main() {
                   <div className="text-sm font-medium text-white/70 truncate italic bg-black/30 p-2.5 rounded-lg border border-white/5">
                      {nextLyric ? `"${nextLyric.text}"` : "--- End of Track ---"}
                   </div>
-               </div>
-            </section>
-
-            {/* YouTube Integration */}
-            <section className="space-y-4">
-               <h3 className="input-label flex items-center gap-2 m-0"><Layout size={14} className="text-brand-gold" /> YouTube Support</h3>
-               <div className="flex gap-2">
-                 <input 
-                   type="text" 
-                   placeholder="Paste YouTube music link..." 
-                   value={ytUrl}
-                   onChange={(e) => setYtUrl(e.target.value)}
-                   className="flex-1 h-10 bg-black/40 border border-white/10 rounded-lg text-[10px] px-3 focus:outline-none focus:border-brand-gold font-mono"
-                 />
-                 <button 
-                   onClick={handleYtSubmit}
-                   className="px-4 h-10 bg-brand-gold text-black text-[10px] font-bold rounded-lg hover:scale-105 transition-transform"
-                 >
-                   LOAD
-                 </button>
                </div>
             </section>
 

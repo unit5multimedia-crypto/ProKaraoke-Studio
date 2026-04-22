@@ -299,7 +299,7 @@ export default function KaraokeStage({
     playSFX('win');
     const finalScore = score.toLocaleString();
     setTimeout(() => {
-      speak(`Congratulations! Your final score is ${finalScore}. You are a rock star!`);
+      speak(`Beautiful praise! Your final score is ${finalScore}. To God be the glory!`);
     }, 1000);
 
     // Auto-advance queue if not operator (operator handles it via tab sync)
@@ -511,8 +511,14 @@ export default function KaraokeStage({
             className="z-50 text-center px-12"
           >
             <h1 className="text-6xl font-display font-bold mb-4 tracking-tighter text-brand-gold">
-              READY TO ROCK?
+              Start Praising to God!
             </h1>
+            <div className="max-w-2xl mx-auto mb-8 bg-black/40 border border-white/5 p-4 rounded-xl backdrop-blur-md">
+              <p className="text-brand-gold/80 italic font-serif text-lg leading-relaxed">
+                "Praise the Lord. How good it is to sing praises to our God, how pleasant and fitting to praise him!"
+              </p>
+              <p className="text-brand-gold/50 text-sm mt-2 font-mono uppercase tracking-widest">- Psalm 147:1</p>
+            </div>
             
             <div className="flex flex-col gap-6 items-center">
               <button

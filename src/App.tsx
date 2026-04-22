@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { KaraokeSettings, KaraokeSession, DEFAULT_SETTINGS, ViewType } from './types';
 import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
-import VisualStage from './components/VisualStage';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
@@ -36,16 +35,12 @@ export default function App() {
   const sessionRef = useRef(session);
   const settingsRef = useRef(settings);
   const mediaFilesRef = useRef<Record<string, File>>({});
-  const broadcastRef = useRef<BroadcastChannel | null>(null);
-  const [localFiles, setLocalFiles] = useState<File[]>([]);
 
   // Keep refs in sync with state for broadcast handlers
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   useEffect(() => {
-    broadcastRef.current = new BroadcastChannel('karaoke-sync');
-
     // 1. Start with defaults
     let finalSettings = { ...DEFAULT_SETTINGS };
 
@@ -152,31 +147,6 @@ export default function App() {
     };
   }, []);
 
-  // Electron reset views listener
-  useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.onResetViews(() => {
-        setSession({
-          bumperUrl: null,
-          mediaUrl: null,
-          backgroundUrl: null,
-          isAudioOnly: false,
-          lyrics: [],
-          bpm: null,
-          musicalKey: null,
-          duration: 0,
-        });
-        setPlaybackState({
-          currentTime: 0,
-          phase: 'idle',
-          isPlaying: false,
-          duration: 0
-        });
-        setSettings(DEFAULT_SETTINGS);
-      });
-    }
-  }, []);
-
   const handleMediaUpload = useCallback((type: string, file: File, url: string) => {
     mediaFilesRef.current[type] = file;
     setSession(prev => ({ ...prev, [type]: url }));
@@ -199,12 +169,10 @@ export default function App() {
     });
   }, []);
 
-  const viewParam = new URLSearchParams(window.location.search).get('view') || 'operator';
-
   return (
     <div className="flex h-screen w-full bg-brand-dark overflow-hidden font-sans">
       {/* Sidebar / Console */}
-        {settings.viewType === 'operator' && (
+      {settings.viewType === 'operator' && (
         <div 
           className={`transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           style={{ width: isSidebarOpen ? '380px' : '0' }}
@@ -217,13 +185,12 @@ export default function App() {
             onParseLyrics={handleLyricsContent}
             onMediaUpload={handleMediaUpload}
             playbackState={playbackState}
-            localFiles={localFiles}
           />
         </div>
       )}
 
       {/* Toggle Button (Hidden in presentation mode) */}
-        {settings.viewType === 'operator' && (
+      {settings.viewType === 'operator' && (
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="fixed top-8 left-4 z-[100] w-10 h-10 glass-panel flex items-center justify-center hover:bg-white/10 transition-colors"
@@ -234,20 +201,12 @@ export default function App() {
 
       {/* Main Stage */}
       <main className="flex-1 relative overflow-hidden flex-col">
-        {(viewParam === 'operator' || viewParam === 'prompter') ? (
-          <KaraokeStage 
-            {...session}
-            settings={settings}
-            onStateUpdate={handleStageUpdate}
-            onMediaUpload={handleMediaUpload}
-          />
-        ) : viewParam === 'stage' ? (
-          <VisualStage 
-            session={session}
-            settings={settings}
-            playbackState={playbackState}
-          />
-        ) : null}
+        <KaraokeStage 
+          {...session}
+          settings={settings}
+          onStateUpdate={handleStageUpdate}
+          onMediaUpload={handleMediaUpload}
+        />
         
         {/* Status Bar */}
         {settings.viewType === 'operator' && (

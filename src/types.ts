@@ -42,19 +42,6 @@ export interface KaraokeSession {
   duration: number;
 }
 
-export interface ElectronAPI {
-  onResetViews: (callback: () => void) => void;
-  onEnableVideoOutput: (callback: () => void) => void;
-  enterProjectionMode: () => Promise<void>;
-  exitProjectionMode: () => Promise<void>;
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
-}
-
 export const DEFAULT_SETTINGS: KaraokeSettings = {
   fontSize: 32,
   fontFamily: 'Inter',
