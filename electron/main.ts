@@ -10,12 +10,19 @@ const currentDir = typeof __dirname !== 'undefined'
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
-  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
-
+  const displays = screen.getAllDisplays();
+  const primaryDisplay = screen.getPrimaryDisplay();
+  
+  // Find secondary displays for projector output
+  const secondaryDisplays = displays.filter(d => d.id !== primaryDisplay.id);
+  
+  // Create main operator window on primary display
   mainWindow = new BrowserWindow({
-    width: Math.min(1280, screenWidth),
-    height: Math.min(800, screenHeight),
-    title: "ProKaraoke Studio",
+    width: Math.min(1280, primaryDisplay.workAreaSize.width),
+    height: Math.min(800, primaryDisplay.workAreaSize.height),
+    x: primaryDisplay.workArea.x,
+    y: primaryDisplay.workArea.y,
+    title: "ProKaraoke Studio - Operator",
     backgroundColor: '#0a0a0a',
     webPreferences: {
       preload: path.join(currentDir, 'preload.cjs'),
@@ -23,8 +30,37 @@ function createWindow() {
       contextIsolation: true,
       webSecurity: false, // For YouTube/local media access
     },
-    // Frameless options for potential "Studio" feel
-    titleBarStyle: 'hiddenInset', 
+    titleBarStyle: 'hiddenInset',
+  });
+
+  // Create projector windows for secondary displays
+  const projectorWindows: BrowserWindow[] = [];
+  
+  secondaryDisplays.forEach((display, index) => {
+    const projectorWindow = new BrowserWindow({
+      width: display.workAreaSize.width,
+      height: display.workAreaSize.height,
+      x: display.workArea.x,
+      y: display.workArea.y,
+      title: `ProKaraoke Studio - Projector ${index + 1}`,
+      backgroundColor: '#000000',
+      webPreferences: {
+        preload: path.join(currentDir, 'preload.cjs'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: false,
+      },
+      titleBarStyle: 'hiddenInset',
+      fullscreen: true, // Projectors typically want fullscreen
+      alwaysOnTop: false, // Let user manage layering
+    });
+
+    const projectorUrl = isDev 
+      ? `http://localhost:3000?view=stage` 
+      : `file://${path.join(currentDir, '../dist/index.html')}?view=stage`;
+
+    projectorWindow.loadURL(projectorUrl);
+    projectorWindows.push(projectorWindow);
   });
 
   // Open external links in browser
@@ -43,6 +79,8 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Close all projector windows when main window closes
+    projectorWindows.forEach(win => win.close());
   });
 
   if (isDev) {

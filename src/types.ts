@@ -19,6 +19,12 @@ export interface KaraokeSettings {
   prompterBgColor: string; // e.g., '#000000', '#00ff00' for green screen
   visualTheme: string; // shadertoy theme name
   audioReactivity: number; // sensitivity 0 to 1
+  voiceEffects: {
+    reverb: number; // 0-1
+    echo: number; // 0-1
+    volume: number; // 0-1
+    enabled: boolean;
+  };
 }
 
 export interface SongQueueItem {
@@ -54,4 +60,10 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   prompterBgColor: '#000000',
   visualTheme: 'vibrant_nebula',
   audioReactivity: 0.5,
+  voiceEffects: {
+    reverb: 0.3,
+    echo: 0.2,
+    volume: 0.8,
+    enabled: false,
+  },
 };
