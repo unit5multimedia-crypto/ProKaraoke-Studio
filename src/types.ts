@@ -29,6 +29,7 @@ export interface SongQueueItem {
   isYouTube: boolean;
   bpm?: number | null;
   musicalKey?: string | null;
+  bumperUrl?: string | null;
 }
 
 export interface KaraokeSession {

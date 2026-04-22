@@ -7,12 +7,24 @@ export function useAudioAnalyzer(isActive: boolean) {
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
 
-  const initAnalyzer = (element: HTMLMediaElement) => {
-    if (analyserRef.current) return;
+  const initAnalyzer = (element: HTMLMediaElement | null) => {
+    if (!element) return;
+    // If already connected to THIS element, skip
+    if (sourceRef.current && (sourceRef.current as any).mediaElement === element) return;
+    
+    // Safety check for valid media element
+    if (!(element instanceof HTMLMediaElement)) return;
 
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioContextClass();
-    const analyser = ctx.createAnalyser();
+    if (!AudioContextClass) return;
+
+    const ctx = audioContextRef.current || new AudioContextClass();
+    
+    if (sourceRef.current) {
+      try { sourceRef.current.disconnect(); } catch(e) {}
+    }
+
+    const analyser = analyserRef.current || ctx.createAnalyser();
     analyser.fftSize = 256;
     
     const source = ctx.createMediaElementSource(element);

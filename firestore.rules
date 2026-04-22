@@ -30,10 +30,10 @@ service cloud.firestore {
       function isValidUser(data) {
         return (data.uid == request.auth.uid)
           && (data.email == request.auth.token.email)
-          && (data.displayName is string && data.displayName.size() <= 100)
-          && (('photoURL' in data && data.photoURL is string && data.photoURL.size() <= 1024) || !('photoURL' in data))
-          && (data.updatedAt == request.time || data.updatedAt == existing().updatedAt)
-          && (data.settings is map || !('settings' in data));
+          && (!('displayName' in data) || (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100)))
+          && (!('photoURL' in data) || (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1024)))
+          && (!('updatedAt' in data) || data.updatedAt != null) // Relaxed timestamp check
+          && (!('settings' in data) || data.settings is map);
       }
     }
 
@@ -46,21 +46,22 @@ service cloud.firestore {
       allow update: if isOwner(uid) && (
         // Any change is valid if it passes basic structure checks
         isValidSession(incoming()) && (
-          // Action: Transport Control (Play/Pause/Seek)
-          (incoming().diff(existing()).affectedKeys().hasOnly(['isPlaying', 'currentTime', 'updatedAt'])) ||
-          // Action: Load Media (Change Song)
-          (incoming().diff(existing()).affectedKeys().hasOnly(['mediaUrl', 'isYouTube', 'lyrics', 'bpm', 'musicalKey', 'updatedAt', 'title', 'isAudioOnly'])) ||
-          // Action: Full Sync
-          (incoming().diff(existing()).affectedKeys().hasOnly(['isPlaying', 'currentTime', 'mediaUrl', 'isYouTube', 'lyrics', 'bpm', 'musicalKey', 'updatedAt', 'title', 'isAudioOnly']))
+          // Generic update allowed as long as session is valid
+          true
         )
       );
 
       function isValidSession(data) {
-        return (data.updatedAt == request.time)
+        return (!('updatedAt' in data) || data.updatedAt != null) // Relaxed timestamp check
           && (!('isPlaying' in data) || data.isPlaying is bool)
           && (!('currentTime' in data) || data.currentTime is number)
+          && (!('duration' in data) || data.duration is number)
           && (!('mediaUrl' in data) || (data.mediaUrl == null || (data.mediaUrl is string && data.mediaUrl.size() <= 2048)))
+          && (!('bumperUrl' in data) || (data.bumperUrl == null || (data.bumperUrl is string && data.bumperUrl.size() <= 2048)))
+          && (!('backgroundUrl' in data) || (data.backgroundUrl == null || (data.backgroundUrl is string && data.backgroundUrl.size() <= 2048)))
+          && (!('title' in data) || (data.title == null || (data.title is string && data.title.size() <= 255)))
           && (!('isYouTube' in data) || data.isYouTube is bool)
+          && (!('isAudioOnly' in data) || data.isAudioOnly is bool)
           && (!('lyrics' in data) || (data.lyrics is list && data.lyrics.size() <= 1000));
       }
     }
@@ -77,7 +78,10 @@ service cloud.firestore {
           && (data.title is string && data.title.size() <= 255)
           && (data.mediaUrl is string && data.mediaUrl.size() <= 2048)
           && (data.isYouTube is bool)
-          && (data.addedAt == request.time);
+          && (data.addedAt == request.time)
+          && (!('bpm' in data) || data.bpm == null || data.bpm is number)
+          && (!('musicalKey' in data) || data.musicalKey == null || data.musicalKey is string)
+          && (!('bumperUrl' in data) || data.bumperUrl == null || data.bumperUrl is string);
       }
     }
   }

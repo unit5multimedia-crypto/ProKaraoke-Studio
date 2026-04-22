@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { KaraokeSettings, KaraokeSession, DEFAULT_SETTINGS, ViewType } from './types';
 import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
 import { auth, db, User, validateConnection } from './lib/firebase';
@@ -79,15 +80,20 @@ export default function App() {
           setSession(prev => ({
             ...prev,
             mediaUrl: data.mediaUrl,
-            isAudioOnly: false,
+            isYouTube: data.isYouTube || false,
+            isAudioOnly: data.isAudioOnly || false,
+            bumperUrl: data.bumperUrl || null,
+            backgroundUrl: data.backgroundUrl || null,
             lyrics: data.lyrics || [],
-            bpm: data.bpm,
-            musicalKey: data.musicalKey,
+            bpm: data.bpm || null,
+            musicalKey: data.musicalKey || null,
+            duration: data.duration || 0,
           }));
           
           setPlaybackState(prev => ({
             ...prev,
             isPlaying: data.isPlaying,
+            currentTime: data.currentTime || 0,
           }));
         }
       }
@@ -272,12 +278,14 @@ export default function App() {
 
       {/* Main Stage */}
       <main className="flex-1 relative overflow-hidden flex-col">
-        <KaraokeStage 
-          {...session}
-          settings={settings}
-          onStateUpdate={handleStageUpdate}
-          onMediaUpload={handleMediaUpload}
-        />
+        <ErrorBoundary>
+          <KaraokeStage 
+            {...session}
+            settings={settings}
+            onStateUpdate={handleStageUpdate}
+            onMediaUpload={handleMediaUpload}
+          />
+        </ErrorBoundary>
         
         {/* Status Bar */}
         {settings.viewType === 'operator' && (

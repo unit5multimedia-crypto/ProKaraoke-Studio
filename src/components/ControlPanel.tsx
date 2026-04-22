@@ -41,6 +41,8 @@ export default function ControlPanel({
   const [makerLyrics, setMakerLyrics] = React.useState<string>("");
   const [makerLines, setMakerLines] = React.useState<string[]>([]);
   const [makerStep, setMakerStep] = React.useState(0);
+  const [makerResults, setMakerResults] = React.useState<{text: string, startTime: number, endTime: number}[]>([]);
+  const [isReviewingMaker, setIsReviewingMaker] = React.useState(false);
   const [ytUrl, setYtUrl] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
@@ -126,7 +128,12 @@ export default function ControlPanel({
     // If it's video or audio, it's media
     else if (file.mimeType.startsWith('video/') || file.mimeType.startsWith('audio/')) {
        const url = getDriveDownloadUrl(file.id, userAuth.accessToken);
-       setSession(prev => ({ ...prev, mediaUrl: url, isAudioOnly: file.mimeType.startsWith('audio/') }));
+       setSession(prev => ({ 
+         ...prev, 
+         mediaUrl: url, 
+         isYouTube: false,
+         isAudioOnly: file.mimeType.startsWith('audio/') 
+       }));
        
        if (onSyncSession) {
          onSyncSession({ mediaUrl: url, isYouTube: false, isAudioOnly: file.mimeType.startsWith('audio/') });
@@ -167,7 +174,8 @@ export default function ControlPanel({
       isAudioOnly: false,
       bpm: item.bpm || null,
       musicalKey: item.musicalKey || null,
-      isYouTube: item.isYouTube
+      isYouTube: item.isYouTube,
+      bumperUrl: item.bumperUrl || session.bumperUrl
     };
 
     setSession(prev => ({
@@ -188,9 +196,18 @@ export default function ControlPanel({
 
   const handleYtSubmit = () => {
     if (!ytUrl) return;
-    setSession(prev => ({ ...prev, mediaUrl: ytUrl, isAudioOnly: false }));
+    setSession(prev => ({ 
+      ...prev, 
+      mediaUrl: ytUrl, 
+      isYouTube: true,
+      isAudioOnly: false 
+    }));
     if (onSyncSession) {
-      onSyncSession({ mediaUrl: ytUrl, isYouTube: true });
+      onSyncSession({ 
+        mediaUrl: ytUrl, 
+        isYouTube: true,
+        isAudioOnly: false
+      });
     }
   };
 
@@ -198,11 +215,26 @@ export default function ControlPanel({
     const time = playbackState.currentTime;
     const line = makerLines[makerStep];
     if (!line) return;
-    const endTime = time + 5; 
-    const formatted = `[${formatTime(time)}-${formatTime(endTime)}] ${line}`;
-    setMakerLyrics(prev => prev + (prev ? "\n" : "") + formatted);
+    
+    setMakerResults(prev => [...prev, { text: line, startTime: time, endTime: time + 3 }]);
     setMakerStep(s => s + 1);
+    
+    if (makerStep + 1 === makerLines.length) {
+      setIsReviewingMaker(true);
+    }
   }, [playbackState.currentTime, makerLines, makerStep]);
+
+  const finalizeFromResults = () => {
+    const formatted = makerResults.map(r => `[${formatTime(r.startTime)}-${formatTime(r.endTime)}] ${r.text}`).join('\n');
+    onParseLyrics(formatted);
+    if (onSyncSession) {
+      onSyncSession({ lyrics: session.lyrics });
+    }
+    setActiveTab('config');
+    setIsReviewingMaker(false);
+    setMakerStep(0);
+    setMakerResults([]);
+  };
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -218,13 +250,7 @@ export default function ControlPanel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, playbackState.isPlaying, makerStep, makerLines.length, handleMakerCapture]);
 
-  const finalizeMaker = () => {
-    onParseLyrics(makerLyrics);
-    if (onSyncSession) {
-      onSyncSession({ lyrics: session.lyrics });
-    }
-    setActiveTab('config');
-  };
+  // finalizeMaker removed in favor of finalizeFromResults
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -257,9 +283,22 @@ export default function ControlPanel({
        
        if (type === 'mediaUrl') {
          const { bpm, key } = await analyzeAudio(url);
-         setSession(prev => ({ ...prev, mediaUrl: url, bpm, musicalKey: key }));
+         setSession(prev => ({ 
+           ...prev, 
+           mediaUrl: url, 
+           isYouTube: false,
+           isAudioOnly: file.mimeType.startsWith('audio/'),
+           bpm, 
+           musicalKey: key 
+         }));
          if (onSyncSession) {
-            onSyncSession({ mediaUrl: url, isYouTube: false, bpm, musicalKey: key });
+            onSyncSession({ 
+              mediaUrl: url, 
+              isYouTube: false, 
+              isAudioOnly: file.mimeType.startsWith('audio/'),
+              bpm, 
+              musicalKey: key 
+            });
          }
        }
     }
@@ -344,7 +383,7 @@ export default function ControlPanel({
                 <div className="p-8 border border-dashed border-white/5 rounded-2xl flex flex-col items-center gap-3 text-center">
                   <ListMusic size={32} className="text-white/10" />
                   <p className="text-[10px] text-white/20 uppercase tracking-widest font-mono">Queue is empty</p>
-                  <button onClick={() => setActiveTab('search')} className="text-[10px] text-brand-gold border border-brand-gold/20 px-3 py-1 rounded-full hover:bg-brand-gold/5 transition-colors">Start Searching</button>
+                  <button onClick={() => setActiveTab('library')} className="text-[10px] text-brand-gold border border-brand-gold/20 px-3 py-1 rounded-full hover:bg-brand-gold/5 transition-colors">Start Searching</button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -360,7 +399,36 @@ export default function ControlPanel({
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-bold text-white/90 truncate">{item.title}</p>
-                        <p className="text-[9px] font-mono text-white/30 truncate">{item.isYouTube ? 'YouTube Source' : 'Local Source'}</p>
+                        <div className="flex items-center gap-2">
+                           <p className="text-[9px] font-mono text-white/30 truncate">{item.isYouTube ? 'YouTube Source' : 'Local Source'}</p>
+                           {item.bumperUrl ? (
+                             <span className="text-[8px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded border border-brand-gold/20 flex items-center gap-1">
+                               <Video size={8} /> BUMPER
+                             </span>
+                           ) : (
+                             <button 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 const input = document.createElement('input');
+                                 input.type = 'file';
+                                 input.accept = 'video/*';
+                                 input.onchange = (ev: any) => {
+                                   const file = ev.target.files[0];
+                                   if (file) {
+                                     const url = URL.createObjectURL(file);
+                                     const newQueue = [...queue];
+                                     newQueue[i].bumperUrl = url;
+                                     saveQueue(newQueue);
+                                   }
+                                 };
+                                 input.click();
+                               }}
+                               className="text-[8px] text-white/20 hover:text-brand-gold underline"
+                             >
+                               SET BUMPER
+                             </button>
+                           )}
+                        </div>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
@@ -491,8 +559,18 @@ export default function ControlPanel({
                                 <p className="text-[10px] font-bold text-white/80 line-clamp-2 leading-tight">{res.title}</p>
                                 <div className="flex gap-2">
                                   <button onClick={() => { setYtUrl(`https://www.youtube.com/watch?v=${res.id}`); handleYtSubmit(); }} className="text-[9px] font-bold text-brand-gold hover:underline">LOAD</button>
-                                  <button onClick={() => addToQueue(res)} className="text-[9px] font-bold text-white/40 hover:text-white flex items-center gap-1">
+                                  <button onClick={() => addToQueue(res)} className="text-[9px] font-bold text-white/40 hover:text-brand-gold flex items-center gap-1">
                                     <Plus size={10} /> ENQUEUE
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      setMakerLines([res.title, "(Verse 1)", "...", "(Chorus)", "..."]);
+                                      setActiveTab('maker');
+                                      setYtUrl(`https://www.youtube.com/watch?v=${res.id}`);
+                                    }}
+                                    className="text-[9px] font-bold text-white/20 hover:text-brand-gold transition-colors"
+                                  >
+                                    SYNC
                                   </button>
                                 </div>
                               </div>
@@ -549,7 +627,30 @@ export default function ControlPanel({
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-[10px] font-bold text-white/80 truncate group-hover:text-brand-gold">{file.name}</p>
-                              <p className="text-[8px] font-mono text-white/20 uppercase">{(parseInt(file.size || "0") / 1024 / 1024).toFixed(1)}MB</p>
+                              <div className="flex gap-2 items-center">
+                                <p className="text-[8px] font-mono text-white/20 uppercase">{(parseInt(file.size || "0") / 1024 / 1024).toFixed(1)}MB</p>
+                                {!file.mimeType.startsWith('text/') && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const url = getDriveDownloadUrl(file.id, userAuth!.accessToken);
+                                      const newItem: SongQueueItem = {
+                                        id: Math.random().toString(36).substr(2, 9),
+                                        title: file.name,
+                                        mediaUrl: url,
+                                        lyrics: [],
+                                        isYouTube: false,
+                                        bumperUrl: session.bumperUrl
+                                      };
+                                      saveQueue([...queue, newItem]);
+                                      setActiveTab('queue');
+                                    }}
+                                    className="text-[8px] font-bold text-brand-gold hover:underline"
+                                  >
+                                    ENQUEUE
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </motion.div>
                         ))}
@@ -570,10 +671,40 @@ export default function ControlPanel({
                          <div className="w-12 h-12 bg-brand-gold/10 rounded-xl flex items-center justify-center text-brand-gold group-hover:scale-110 transition-transform">
                             <Video size={24} />
                          </div>
-                         <div className="flex-1">
-                            <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Video / Audio</h4>
-                            <p className="text-[10px] text-white/30 font-mono">MP4, MKV, MP3, WAV...</p>
-                         </div>
+                             <div className="flex-1">
+                                <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Video / Audio</h4>
+                                <div className="flex gap-2">
+                                  <p className="text-[10px] text-white/30 font-mono">MP4, MKV, MP3, WAV...</p>
+                                  <button 
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      const input = document.createElement('input');
+                                      input.type = 'file';
+                                      input.accept = 'video/*,audio/*';
+                                      input.onchange = async (ev: any) => {
+                                        const file = ev.target.files[0];
+                                        if (file) {
+                                          const url = URL.createObjectURL(file);
+                                          const newItem: SongQueueItem = {
+                                            id: Math.random().toString(36).substr(2, 9),
+                                            title: file.name,
+                                            mediaUrl: url,
+                                            lyrics: [],
+                                            isYouTube: false,
+                                            bumperUrl: session.bumperUrl
+                                          };
+                                          saveQueue([...queue, newItem]);
+                                          setActiveTab('queue');
+                                        }
+                                      };
+                                      input.click();
+                                    }}
+                                    className="text-[9px] font-bold text-brand-gold hover:underline"
+                                  >
+                                    ADD TO QUEUE
+                                  </button>
+                                </div>
+                             </div>
                          <input type="file" className="hidden" accept="video/*,audio/*" onChange={handleFileUpload('mediaUrl')} />
                        </label>
 
@@ -801,54 +932,99 @@ export default function ControlPanel({
 
         {activeTab === 'maker' && (
           <div className="space-y-6">
-             <div className="p-4 bg-brand-gold/5 rounded-xl border border-brand-gold/10">
-                <h4 className="text-[10px] font-bold text-brand-gold uppercase tracking-widest mb-2">1. Paste Raw Text</h4>
-                <textarea 
-                   placeholder="Paste lyrics line-by-line here..."
-                   className="w-full h-32 bg-black/40 border border-white/10 rounded-lg text-[10px] p-3 focus:outline-none focus:border-brand-gold font-mono leading-relaxed"
-                   onChange={(e) => setMakerLines(e.target.value.split('\n').filter(l => l.trim()))}
-                />
-             </div>
+             {!isReviewingMaker ? (
+               <>
+                 <div className="p-4 bg-brand-gold/5 rounded-xl border border-brand-gold/10">
+                    <h4 className="text-[10px] font-bold text-brand-gold uppercase tracking-widest mb-2">1. Paste Raw Text</h4>
+                    <textarea 
+                       placeholder="Paste lyrics line-by-line here..."
+                       className="w-full h-32 bg-black/40 border border-white/10 rounded-lg text-[10px] p-3 focus:outline-none focus:border-brand-gold font-mono leading-relaxed"
+                       onChange={(e) => {
+                         const lines = e.target.value.split('\n').filter(l => l.trim());
+                         setMakerLines(lines);
+                       }}
+                    />
+                 </div>
 
-             <div className="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
-                <h4 className="text-[10px] font-bold text-white/80 uppercase tracking-widest mb-3">2. Capture Timing</h4>
-                <p className="text-[10px] text-white/40 italic mb-4">Click RECORD MARKER when each line starts.</p>
-                
-                <div className="bg-black/40 p-3 rounded-lg border border-white/5 mb-4 max-h-32 overflow-y-auto custom-scrollbar">
-                   {makerLines.map((line, i) => (
-                      <div key={i} className={`text-[10px] py-1 border-b border-white/5 last:border-0 ${i === makerStep ? 'text-brand-gold font-bold bg-brand-gold/5' : i < makerStep ? 'text-green-500 opacity-50' : 'text-white/20'}`}>
-                         {i < makerStep ? "✓ " : i === makerStep ? "> " : "• "}{line}
+                 <div className="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
+                    <h4 className="text-[10px] font-bold text-white/80 uppercase tracking-widest mb-3">2. Capture Timing</h4>
+                    <p className="text-[10px] text-white/40 italic mb-4">Spacebar or button to mark start.</p>
+                    
+                    <div className="bg-black/40 p-3 rounded-lg border border-white/5 mb-4 max-h-48 overflow-y-auto custom-scrollbar">
+                       {makerLines.map((line, i) => (
+                          <div key={i} className={`text-[10px] py-1 border-b border-white/5 last:border-0 ${i === makerStep ? 'text-brand-gold font-bold bg-brand-gold/5' : i < makerStep ? 'text-green-500 opacity-50' : 'text-white/20'}`}>
+                             {i < makerStep ? "✓ " : i === makerStep ? "> " : "• "}{line}
+                          </div>
+                       ))}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        disabled={makerStep >= makerLines.length || !playbackState.isPlaying}
+                        onClick={handleMakerCapture}
+                        className="flex-1 py-4 bg-brand-gold text-black font-bold text-xs rounded-xl shadow-lg active:scale-95 transition-all"
+                      >
+                        {makerStep >= makerLines.length ? 'COMPLETE' : 'RECORD MARKER'}
+                      </button>
+                      <button onClick={() => { setMakerStep(0); setMakerResults([]); }} className="w-12 h-14 border border-white/10 flex items-center justify-center rounded-xl text-white/40 hover:text-white transition-colors">
+                        <RotateCcw size={16} />
+                      </button>
+                    </div>
+                 </div>
+               </>
+             ) : (
+               <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+                  <div className="flex items-center justify-between px-2">
+                    <h4 className="text-[10px] font-bold text-brand-gold uppercase tracking-widest">3. Validation & Tuning</h4>
+                    <button onClick={() => setIsReviewingMaker(false)} className="text-[9px] font-mono text-white/40 hover:text-white">BACK</button>
+                  </div>
+
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {makerResults.map((res, i) => (
+                      <div key={i} className="p-3 bg-white/5 border border-white/10 rounded-xl space-y-3">
+                        <div className="text-[11px] font-medium text-white/80 italic">"{res.text}"</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-mono text-white/20 uppercase">Start (s)</label>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              value={res.startTime.toFixed(2)} 
+                              onChange={(e) => {
+                                const newResults = [...makerResults];
+                                newResults[i].startTime = parseFloat(e.target.value);
+                                setMakerResults(newResults);
+                              }}
+                              className="w-full bg-black/40 border border-white/5 rounded p-1 text-[10px] font-mono text-brand-gold focus:border-brand-gold/50 outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-mono text-white/20 uppercase">End (s)</label>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              value={res.endTime.toFixed(2)} 
+                              onChange={(e) => {
+                                const newResults = [...makerResults];
+                                newResults[i].endTime = parseFloat(e.target.value);
+                                setMakerResults(newResults);
+                              }}
+                              className="w-full bg-black/40 border border-white/5 rounded p-1 text-[10px] font-mono text-white/60 focus:border-brand-gold/50 outline-none"
+                            />
+                          </div>
+                        </div>
                       </div>
-                   ))}
-                </div>
+                    ))}
+                  </div>
 
-                <div className="flex gap-3">
                   <button 
-                    disabled={makerStep >= makerLines.length || !playbackState.isPlaying}
-                    onClick={handleMakerCapture}
-                    className="flex-1 py-4 bg-brand-gold text-black font-bold text-xs rounded-xl shadow-lg"
+                    onClick={finalizeFromResults}
+                    className="w-full py-4 bg-green-500 text-black font-black text-xs rounded-xl shadow-lg shadow-green-500/20 active:scale-95 transition-all mt-4"
                   >
-                    RECORD MARKER
+                    FINALIZE & SAVE PRODUCTION SYNC
                   </button>
-                  <button onClick={() => { setMakerStep(0); setMakerLyrics(""); }} className="w-12 h-14 border border-white/10 flex items-center justify-center rounded-xl text-white/40">
-                    <RotateCcw size={16} />
-                  </button>
-                </div>
-             </div>
-
-             <div className="space-y-3">
-                <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest px-2">Preview Output</h4>
-                <div className="p-3 h-24 bg-black/60 rounded-xl font-mono text-[10px] text-brand-gold/60 overflow-y-auto whitespace-pre border border-white/5">
-                   {makerLyrics || "Timing markers will appear here..."}
-                </div>
-                <button 
-                   disabled={!makerLyrics}
-                   onClick={finalizeMaker}
-                   className="w-full py-3 bg-white/5 border border-white/10 text-white font-bold text-xs rounded-xl"
-                >
-                   LOAD INTO SESSION
-                </button>
-             </div>
+               </div>
+             )}
           </div>
         )}
       </div>

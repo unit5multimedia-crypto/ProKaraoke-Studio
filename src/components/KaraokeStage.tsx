@@ -5,7 +5,6 @@ import { usePitchDetection } from '../hooks/usePitchDetection';
 import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
 import { VisualBackground } from './VisualBackground';
 import { Mic, Music, Play, Pause, RotateCcw, Award, Trophy, ListMusic } from 'lucide-react';
-import { io } from 'socket.io-client';
 
 declare global {
   interface Window {
@@ -62,6 +61,7 @@ export default function KaraokeStage({
 
   const bumperRef = useRef<HTMLVideoElement>(null);
   const mainRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [ytReady, setYtReady] = useState(false);
   const pitch = usePitchDetection(phase === 'main' && isPlaying);
@@ -317,18 +317,19 @@ export default function KaraokeStage({
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
-      const socket = io();
-      socket.emit('karaoke-sync', { type: 'COMMAND', payload: { action: 'RESET' } });
-      socket.disconnect();
+      const bc = new BroadcastChannel('karaoke-sync');
+      bc.postMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
+      bc.close();
     }
   };
 
   useEffect(() => {
-    const socket = io();
-    socket.on('karaoke-sync', (message: any) => {
-      if (settings.viewType === 'operator') return; // Only secondary views listen
-
-      const { type, payload } = message;
+    // Session State Sync logic
+    const bc = new BroadcastChannel('karaoke-sync');
+    bc.onmessage = (event) => {
+      if (settings.viewType === 'operator') return;
+      const { type, payload } = event.data;
+      
       if (type === 'COMMAND') {
         switch (payload.action) {
           case 'START':
@@ -350,29 +351,15 @@ export default function KaraokeStage({
             break;
         }
       }
-    });
-
-    // Fallback broadcast channel for local blobs
-    const bc = new BroadcastChannel('karaoke-sync-local');
-    bc.onmessage = (event) => {
-      if (settings.viewType === 'operator') return;
-      const { type, payload } = event.data;
-      if (type === 'COMMAND' && payload.action === 'QUEUE_SYNC') {
-         setQueue(payload);
-      }
     };
 
     return () => {
-      socket.disconnect();
       bc.close();
     };
   }, [settings.viewType, bumperUrl, mediaUrl]);
 
   // Refined YouTube initialization with interval check for YT global
   useEffect(() => {
-    // We only initialize when in 'main' phase and have a YouTube ID
-    // or if we want to pre-load, we must ensure the container exists.
-    // For simplicity and reliability, we init when phase is 'main'.
     if (!isYouTube || !youtubeId || phase !== 'main') {
       setYtReady(false);
       if (ytPlayerRef.current) {
@@ -381,12 +368,12 @@ export default function KaraokeStage({
       return;
     }
 
-    setYtReady(false); // Reset ready state for new video
+    setYtReady(false);
     let initAttempts = 0;
     const maxAttempts = 20;
 
     const tryInit = () => {
-      const container = document.getElementById(`yt-player-${youtubeId}`);
+      const container = ytContainerRef.current;
       if (!container) return false;
 
       if (window.YT && window.YT.Player) {
@@ -394,7 +381,7 @@ export default function KaraokeStage({
           try { ytPlayerRef.current.destroy(); } catch(e) {}
         }
         
-        ytPlayerRef.current = new window.YT.Player(`yt-player-${youtubeId}`, {
+        ytPlayerRef.current = new window.YT.Player(container, {
           videoId: youtubeId,
           playerVars: {
             autoplay: 1,
@@ -406,6 +393,7 @@ export default function KaraokeStage({
             iv_load_policy: 3,
             enablejsapi: 1,
             autohide: 1,
+            playsinline: 1,
             origin: window.location.origin
           },
           events: {
@@ -413,7 +401,6 @@ export default function KaraokeStage({
               try {
                 console.log('YouTube Player Ready');
                 setYtReady(true);
-                // Aggressive play attempt
                 if (event.target.playVideo) event.target.playVideo();
                 if (event.target.unMute) event.target.unMute();
                 showFeedback("Vocal Engine", "Ready");
@@ -422,7 +409,6 @@ export default function KaraokeStage({
               }
             },
             onStateChange: (event: any) => {
-              // Automatically sync isPlaying state with actual YouTube state
               if (event.data === window.YT.PlayerState.PLAYING) {
                 setIsPlaying(true);
               } else if (event.data === window.YT.PlayerState.PAUSED) {
@@ -464,9 +450,9 @@ export default function KaraokeStage({
     const newState = !isPlaying;
     setIsPlaying(newState);
     if (settings.viewType === 'operator') {
-      const socket = io();
-      socket.emit('karaoke-sync', { type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
-      socket.disconnect();
+      const bc = new BroadcastChannel('karaoke-sync');
+      bc.postMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
+      bc.close();
     }
   };
 
@@ -559,7 +545,7 @@ export default function KaraokeStage({
           </motion.div>
         )}
 
-        {phase === 'bumper' && (
+        {phase === 'bumper' && bumperUrl && (
           <motion.div
             key="bumper"
             initial={{ opacity: 0 }}
@@ -570,8 +556,10 @@ export default function KaraokeStage({
           >
             <video
               ref={bumperRef}
-              src={bumperUrl || ''}
+              src={bumperUrl}
               autoPlay
+              playsInline
+              crossOrigin="anonymous"
               onEnded={handleBumperEnd}
               className="w-full h-full object-cover"
             />
@@ -589,28 +577,24 @@ export default function KaraokeStage({
             animate={{ opacity: 1 }}
             className="absolute inset-0 z-30"
           >
-            {/* Background Layer (Only for local audio or non-YouTube modes) */}
-            {isAudioOnly && !isYouTube ? (
-              <div className="absolute inset-0 bg-brand-dark flex items-center justify-center z-10">
-                {backgroundUrl ? (
-                  <img src={backgroundUrl} className="w-full h-full object-cover opacity-60 blur-sm" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-brand-dark to-brand-panel opacity-50" />
-                )}
-              </div>
-            ) : null}
+            {/* Background Layer (Visualizer or Image) */}
+            <div className="absolute inset-0 z-10 bg-black">
+              {backgroundUrl ? (
+                <img src={backgroundUrl} className="w-full h-full object-cover opacity-60 blur-sm" referrerPolicy="no-referrer" />
+              ) : (
+                <VisualBackground 
+                  fftData={fftData} 
+                  theme={settings.visualTheme || settings.theme} 
+                  sensitivity={settings.audioReactivity || settings.visualizerSensitivity} 
+                />
+              )}
+            </div>
 
-            {/* Media Player */}
-            {settings.viewType === 'stage' ? (
-               <VisualBackground 
-                 fftData={fftData} 
-                 theme={settings.visualTheme} 
-                 sensitivity={settings.audioReactivity} 
-               />
-            ) : isYouTube ? (
+            {/* Media Player Layer */}
+            {(isYouTube && youtubeId) ? (
               <div className="absolute inset-0 flex items-center justify-center overflow-hidden z-20 bg-black">
                 <div 
-                  id={`yt-player-${youtubeId}`} 
+                  ref={ytContainerRef}
                   className={`w-full aspect-video transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.02]' : 'opacity-100'}`}
                 />
                 
@@ -638,12 +622,14 @@ export default function KaraokeStage({
                   </div>
                 )}
               </div>
-            ) : (
+            ) : mediaUrl ? (
               isAudioOnly ? (
                 <audio
                   ref={mainRef as any}
-                  src={mediaUrl || ''}
+                  src={mediaUrl}
                   autoPlay
+                  playsInline
+                  crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
                   className="hidden"
@@ -651,14 +637,16 @@ export default function KaraokeStage({
               ) : (
                 <video
                   ref={mainRef as any}
-                  src={mediaUrl || ''}
+                  src={mediaUrl}
                   autoPlay
+                  playsInline
+                  crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
                   className="w-full h-full object-cover"
                 />
               )
-            )}
+            ) : null}
 
             {/* UI Overlays */}
             {settings.viewType === 'operator' && (
@@ -827,30 +815,56 @@ export default function KaraokeStage({
           </motion.div>
         )}
 
-        {phase === 'finished' && settings.viewType === 'operator' && (
+        {phase === 'finished' && (
           <motion.div
             key="finished"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
+            initial={{ scale: 0.8, opacity: 0, filter: 'blur(20px)' }}
+            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
             className="z-50 text-center"
           >
-            <div className="glass-panel p-12 flex flex-col items-center gap-6 border-brand-gold/20 shadow-[0_0_50px_rgba(255,215,0,0.1)]">
-              <Trophy size={64} className="text-brand-gold mb-2" />
-              <div>
-                <h2 className="text-4xl font-display font-bold text-brand-gold uppercase tracking-tighter">Performance Complete</h2>
-                <p className="text-sm text-white/60 font-mono uppercase tracking-widest mt-1 text-center">Final Score</p>
-              </div>
-              <div className="text-8xl font-display font-black text-white tracking-tighter">
-                {score.toLocaleString()}
-              </div>
-              <div className="flex gap-4">
-                <button
-                  onClick={handleReset}
-                  className="px-8 py-3 bg-brand-gold text-black font-bold rounded-full hover:scale-105 transition-transform flex items-center gap-2"
+            <div className="glass-panel p-16 flex flex-col items-center gap-8 border-brand-gold/30 shadow-[0_0_100px_rgba(255,215,0,0.2)] bg-black/80 backdrop-blur-xl">
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="flex flex-col items-center"
+              >
+                <Trophy size={80} className="text-brand-gold mb-4 animate-bounce" />
+                <h2 className="text-5xl font-display font-black text-brand-gold uppercase tracking-tighter mb-1">PRO PERFORMANCE</h2>
+                <p className="text-[10px] text-white/40 font-mono uppercase tracking-[0.4em]">Evaluation Complete</p>
+              </motion.div>
+
+              <div className="relative">
+                <motion.div 
+                   initial={{ scale: 0.5, opacity: 0 }}
+                   animate={{ scale: 1, opacity: 1 }}
+                   transition={{ type: 'spring', damping: 10, delay: 0.5 }}
+                   className="text-9xl font-display font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)]"
                 >
-                  <RotateCcw size={18} /> TRY AGAIN
-                </button>
+                  {Math.min(100, Math.floor((score / Math.max(1, (lyrics.length * 50))) * 100))}%
+                </motion.div>
+                <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-brand-gold font-mono font-bold text-xs uppercase tracking-widest whitespace-nowrap">
+                   {score.toLocaleString()} POINTS
+                </div>
               </div>
+
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1 }}
+                className="flex flex-col gap-4"
+              >
+                <p className="text-brand-gold/60 italic font-serif max-w-sm">"Great is our Lord and abundant in strength; His understanding is infinite." - Psalm 147:5</p>
+                
+                {settings.viewType === 'operator' && (
+                  <button
+                    onClick={handleReset}
+                    className="px-12 py-4 bg-brand-gold text-black font-black rounded-full hover:scale-110 active:scale-95 transition-all flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(255,215,0,0.3)] mt-4"
+                  >
+                    <RotateCcw size={20} /> CLEAR STAGE
+                  </button>
+                )}
+              </motion.div>
             </div>
           </motion.div>
         )}
