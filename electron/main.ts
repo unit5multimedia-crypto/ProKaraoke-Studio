@@ -1,10 +1,11 @@
 import { app, BrowserWindow, screen } from 'electron';
 import path from 'path';
 import isDev from 'electron-is-dev';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Fallback for __dirname depending on the build environment
+const currentDir = typeof __dirname !== 'undefined' 
+  ? __dirname 
+  : path.join(app.getAppPath(), 'electron');
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -17,7 +18,7 @@ function createWindow() {
     title: "ProKaraoke Studio",
     backgroundColor: '#0a0a0a',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(currentDir, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false, // For YouTube/local media access
@@ -36,7 +37,7 @@ function createWindow() {
 
   const startUrl = isDev 
     ? 'http://localhost:3000?view=operator' 
-    : `file://${path.join(__dirname, '../dist/index.html')}?view=operator`;
+    : `file://${path.join(currentDir, '../dist/index.html')}?view=operator`;
 
   mainWindow.loadURL(startUrl);
 
