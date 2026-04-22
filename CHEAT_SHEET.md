@@ -6,8 +6,10 @@
 *Use this heavily during development. It runs in Chrome/Edge and is much faster.*
 ```bash
 npm run dev
-```http://localhost:3000/?view=visuals
+```
+
 👉 *Then open your browser to `http://localhost:3000`*
+(Or use your specific views like `http://localhost:3000/?view=visuals` or `http://localhost:3000/?view=singer`)
 
 **Option B: The Native Desktop Window**
 *Use this when checking how it feels as a final "Studio" application.*
@@ -17,22 +19,43 @@ npm run electron:dev
 
 ---
 
-## ☁️ 2. The AI Studio Sync (Git Cheat Sheet)
+## ☁️ 2. The Foolproof "AI + VS Code Workflow"
 
-**When AI Studio builds something new:**
-1. AI Studio automatically hits "Stage and Commit" (which does a `git push`).
-2. You run this in your VS Code terminal to get my work:
+Whenever you make changes in VS Code, and I make changes in AI Studio, always run this exact sequence in your VS Code terminal to sync us perfectly:
+
+**Step 1: Save YOUR work locally**
+Always do this first to protect the changes you made on your computer.
+```bash
+git add .
+git commit -m "saving my local changes"
+```
+
+**Step 2: Download MY work (from AI Studio)**
+Fetch the code I wrote for you down to your computer.
 ```bash
 git pull
 ```
+*(Note: If VS Code shows you "Merge Conflicts" here, click the buttons to pick the code you want to keep, and save the files).*
 
-**When YOU change something locally and want AI Studio to see it:**
-Run these three commands in your VS Code terminal:
+**Step 3: Finish the Merge**
+If you had to click those Merge Conflict buttons in Step 2, you tell Git you are done by running an update commit:
 ```bash
 git add .
-git commit -m "my update message"
+git commit -m "merged AI changes"
+```
+
+**Step 4: Upload the final combined version to the cloud**
+Push the beautifully combined code up to GitHub so AI Studio has the latest version too.
+```bash
 git push
 ```
+
+💡 **One extra command to remember:**
+If you ever feel lost or aren't sure what Git is doing, just type:
+```bash
+git status
+```
+It will always tell you exactly what is going on (e.g., “You have uncommitted changes” or “You need to git pull”).
 
 **If the "Bouncer" blocks you (GitHub Push Protection Error):**
 1. Check `.env.example` - Ensure NO keys are there.
