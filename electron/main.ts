@@ -27,9 +27,12 @@ function createWindow() {
     titleBarStyle: 'hiddenInset', 
   });
 
+  // CRITICAL: Set User Agent to allow Google/YouTube login in Electron
+  mainWindow.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://accounts.google.com')) {
+    if (url.startsWith('https://accounts.google.com') || url.startsWith('https://www.youtube.com')) {
       return { action: 'allow' }; // Allow OAuth popups
     }
     return { action: 'deny' };
@@ -49,6 +52,39 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 }
+
+// IPC Handling for Projection Mode
+import { ipcMain } from 'electron';
+
+ipcMain.on('open-projection', (event, viewType: string) => {
+  const displays = screen.getAllDisplays();
+  const externalDisplay = displays.find((display) => {
+    return display.bounds.x !== 0 || display.bounds.y !== 0;
+  });
+
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    title: `ProKaraoke - ${viewType.toUpperCase()}`,
+    backgroundColor: '#000000',
+    webPreferences: {
+      preload: path.join(currentDir, 'preload.cjs'),
+      contextIsolation: true,
+    },
+  });
+
+  if (externalDisplay) {
+    win.setBounds(externalDisplay.bounds);
+    win.setFullScreen(true);
+  }
+
+  const url = isDev 
+    ? `http://localhost:3000?view=${viewType}` 
+    : `file://${path.join(currentDir, '../dist/index.html')}?view=${viewType}`;
+  
+  win.loadURL(url);
+  win.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+});
 
 app.whenReady().then(createWindow);
 

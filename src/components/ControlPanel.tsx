@@ -537,7 +537,13 @@ export default function ControlPanel({
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-2">
                   <button 
-                    onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=prompter`, 'prompter', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                    onClick={() => {
+                      if (window.electronAPI?.openProjection) {
+                        window.electronAPI.openProjection('prompter');
+                      } else {
+                        window.open(`${window.location.origin}${window.location.pathname}?view=prompter`, 'prompter', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080');
+                      }
+                    }}
                     className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
                   >
                     <div className="w-12 h-12 rounded-full bg-black/50 border border-brand-gold/20 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -549,7 +555,8 @@ export default function ControlPanel({
                   </button>
                   <button 
                     onClick={(e) => {
-                      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=prompter`);
+                      const url = `${window.location.origin}${window.location.pathname}?view=prompter`;
+                      navigator.clipboard.writeText(url);
                       const el = e.currentTarget.querySelector('span');
                       if(el) { el.innerText = 'COPIED!'; setTimeout(() => el.innerText = 'COPY BROWSER URL', 2000); }
                     }}
@@ -561,7 +568,13 @@ export default function ControlPanel({
 
                 <div className="flex flex-col gap-2">
                   <button 
-                    onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=visuals`, 'visuals', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                    onClick={() => {
+                      if (window.electronAPI?.openProjection) {
+                        window.electronAPI.openProjection('visuals');
+                      } else {
+                        window.open(`${window.location.origin}${window.location.pathname}?view=visuals`, 'visuals', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080');
+                      }
+                    }}
                     className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
                   >
                     <div className="w-12 h-12 rounded-full bg-black/50 border border-[#ff0055]/30 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -573,7 +586,8 @@ export default function ControlPanel({
                   </button>
                   <button 
                     onClick={(e) => {
-                      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=visuals`);
+                      const url = `${window.location.origin}${window.location.pathname}?view=visuals`;
+                      navigator.clipboard.writeText(url);
                       const el = e.currentTarget.querySelector('span');
                       if(el) { el.innerText = 'COPIED!'; setTimeout(() => el.innerText = 'COPY BROWSER URL', 2000); }
                     }}

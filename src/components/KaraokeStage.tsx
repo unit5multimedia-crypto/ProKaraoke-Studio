@@ -855,6 +855,23 @@ export default function KaraokeStage({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Autoplay Rescue Overlay (For fresh windows/OBS sources) */}
+      {!isPlaying && settings.viewType !== 'operator' && phase !== 'finished' && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/80 flex flex-col items-center justify-center cursor-pointer group"
+          onClick={() => {
+            setIsPlaying(true);
+            playSFX('start');
+          }}
+        >
+          <div className="w-24 h-24 rounded-full bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center group-hover:scale-110 group-hover:bg-brand-gold/30 transition-all">
+            <Play size={48} className="text-brand-gold ml-2" />
+          </div>
+          <p className="text-sm font-display font-bold text-brand-gold mt-6 uppercase tracking-widest animate-pulse">Click to Activate Feed</p>
+          <p className="text-[10px] font-mono text-white/40 mt-2 uppercase">Browser Security requires interaction to start audio</p>
+        </div>
+      )}
     </div>
   );
 }

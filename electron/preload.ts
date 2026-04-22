@@ -1,10 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Expose methods for window management, file system access, etc.
+  openProjection: (viewType: 'visuals' | 'prompter') => ipcRenderer.send('open-projection', viewType),
   send: (channel: string, data: any) => {
     // whitelist channels
-    let validChannels = ["toMain"];
+    let validChannels = ["toMain", "open-projection"];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
     }
