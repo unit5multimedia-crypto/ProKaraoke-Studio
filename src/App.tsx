@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { KaraokeSettings, KaraokeSession, DEFAULT_SETTINGS } from './types';
+import { KaraokeSettings, KaraokeSession, DEFAULT_SETTINGS, ViewType } from './types';
 import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
 import VisualStage from './components/VisualStage';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
 
 export default function App() {
   const [settings, setSettings] = useState<KaraokeSettings>(DEFAULT_SETTINGS);
@@ -31,10 +32,11 @@ export default function App() {
     duration: 0
   });
 
-  const broadcastRef = useRef<BroadcastChannel | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const sessionRef = useRef(session);
   const settingsRef = useRef(settings);
   const mediaFilesRef = useRef<Record<string, File>>({});
+  const broadcastRef = useRef<BroadcastChannel | null>(null);
   const [localFiles, setLocalFiles] = useState<File[]>([]);
 
   // Keep refs in sync with state for broadcast handlers
@@ -43,20 +45,33 @@ export default function App() {
 
   useEffect(() => {
     broadcastRef.current = new BroadcastChannel('karaoke-sync');
-    
-    const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
-    
-    if (viewParam === 'prompter') {
-      setSettings(prev => ({ ...prev, isPresentationMode: true }));
-      setIsSidebarOpen(false);
-    } else if (viewParam === 'stage') {
-      setSettings(prev => ({ ...prev, isPresentationMode: false })); // Or custom for stage
-      setIsSidebarOpen(false);
-    } else if (viewParam === 'operator') {
-      setSettings(prev => ({ ...prev, isPresentationMode: false }));
-      setIsSidebarOpen(true);
+
+    // 1. Start with defaults
+    let finalSettings = { ...DEFAULT_SETTINGS };
+
+    // 2. Merge from LocalStorage
+    const saved = localStorage.getItem('karaoke_settings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // We exclude viewType from localStorage to prevent cross-tab pollution
+        const { viewType, ...otherSettings } = parsed;
+        finalSettings = { ...finalSettings, ...otherSettings };
+      } catch (e) {
+        console.error('Failed to load settings', e);
+      }
     }
+
+    // 3. Override from URL
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view') as ViewType | null;
+    if (viewParam) {
+      finalSettings.viewType = viewParam;
+      if (viewParam !== 'operator') setIsSidebarOpen(false);
+    }
+
+    // 4. Update state ONCE
+    setSettings(finalSettings);
 
     // Initialize YouTube API once
     if (!window.YT) {
@@ -66,37 +81,39 @@ export default function App() {
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
     }
 
-    broadcastRef.current.onmessage = (event) => {
-      const { type, payload } = event.data;
+    // Initialize Socket.io connecting to the Express server for Method 2 Relay
+    const socket = io();
+    socketRef.current = socket;
+
+    socket.on('karaoke-sync', (message: any) => {
+      const { type, payload } = message;
       
       switch (type) {
         case 'SYNC_REQUEST': {
           // If we are the operator, send EVERYTHING to the newcomer
-          if (!settingsRef.current.isPresentationMode && broadcastRef.current) {
-             console.log('Fulfilling sync request for new tab...');
-             broadcastRef.current.postMessage({ type: 'SETTINGS_SYNC', payload: settingsRef.current });
-             broadcastRef.current.postMessage({ type: 'LYRICS_SYNC', payload: sessionRef.current.lyrics });
+          if (settingsRef.current.viewType === 'operator') {
+             console.log('Fulfilling sync request for new tab/OBS...');
+             socket.emit('karaoke-sync', { type: 'SETTINGS_SYNC', payload: settingsRef.current });
+             socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: sessionRef.current.lyrics });
              
-             // Send binary files if we have them
-             Object.entries(mediaFilesRef.current).forEach(([mediaType, file]) => {
-                broadcastRef.current?.postMessage({ 
+             // Send YouTube data (we can't easily serialize massive File blobs over socket efficiently in this quick setup, so we expect pre-loaded YouTube links or host the blobs)
+             if (sessionRef.current.mediaUrl && sessionRef.current.mediaUrl.includes('youtube')) {
+                socket.emit('karaoke-sync', {
                    type: 'MEDIA_SYNC', 
-                   payload: { mediaType, file } 
+                   payload: { mediaType: 'mediaUrl', isYt: true, url: sessionRef.current.mediaUrl }
                 });
-             });
+             }
           }
           break;
         }
         case 'MEDIA_SYNC': {
-          const { mediaType, file, isYt, url } = payload;
-          if (isYt) {
+          const { mediaType, isYt, url } = payload;
+          if (isYt && url) {
             console.log(`Received remote YouTube URL: ${url}`);
             setSession(prev => ({ ...prev, [mediaType]: url }));
-          } else if (file) {
-            console.log(`Received remote media: ${mediaType}`, file.name);
-            const blobUrl = URL.createObjectURL(file);
-            setSession(prev => ({ ...prev, [mediaType]: blobUrl }));
           }
+          // Note: Full File blob syncing is restricted via websockets to prevent massive memory crashes. 
+          // Re-adding Local broadcast channel purely as a fallback for Method 1 (local windows) to receive huge binary blobs.
           break;
         }
         case 'LYRICS_SYNC': {
@@ -108,27 +125,30 @@ export default function App() {
           break;
         }
       }
+    });
+
+    // Also spin up a local broadcast channel just for local massive File blobs (Method 1)
+    const bc = new BroadcastChannel('karaoke-sync-local');
+    bc.onmessage = (event) => {
+        const { type, payload } = event.data;
+        if (type === 'MEDIA_SYNC' && payload.file) {
+            console.log(`Received local massive binary blob: ${payload.mediaType}`);
+            const blobUrl = URL.createObjectURL(payload.file);
+            setSession(prev => ({ ...prev, [payload.mediaType]: blobUrl }));
+        }
     };
 
-    // If prompter or stage view, request current state from operator
-    if (viewParam === 'prompter' || viewParam === 'stage') {
+    // If secondary view, request current state from any open operator tab
+    if (viewParam && viewParam !== 'operator') {
       setTimeout(() => {
         console.log('Sending sync request to operator...');
-        broadcastRef.current?.postMessage({ type: 'SYNC_REQUEST' });
+        socket.emit('karaoke-sync', { type: 'SYNC_REQUEST' });
       }, 800);
     }
 
-    const saved = localStorage.getItem('karaoke_settings');
-    if (saved) {
-      try {
-        setSettings(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load settings', e);
-      }
-    }
-
     return () => {
-      broadcastRef.current?.close();
+      socket.disconnect();
+      bc.close();
     };
   }, []);
 
@@ -184,7 +204,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-brand-dark overflow-hidden font-sans">
       {/* Sidebar / Console */}
-      {viewParam === 'operator' && (
+        {settings.viewType === 'operator' && (
         <div 
           className={`transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           style={{ width: isSidebarOpen ? '380px' : '0' }}
@@ -203,7 +223,7 @@ export default function App() {
       )}
 
       {/* Toggle Button (Hidden in presentation mode) */}
-      {viewParam === 'operator' && (
+        {settings.viewType === 'operator' && (
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="fixed top-8 left-4 z-[100] w-10 h-10 glass-panel flex items-center justify-center hover:bg-white/10 transition-colors"
@@ -230,7 +250,7 @@ export default function App() {
         ) : null}
         
         {/* Status Bar */}
-        {!settings.isPresentationMode && (
+        {settings.viewType === 'operator' && (
           <footer className="absolute bottom-4 left-4 right-4 h-12 flex items-center justify-between px-6 glass-panel pointer-events-none opacity-50 hover:opacity-100 transition-opacity">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">

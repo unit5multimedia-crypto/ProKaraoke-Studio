@@ -5,6 +5,8 @@ export interface LyricLine {
   targetFrequency?: number; // Optional frequency for scoring
 }
 
+export type ViewType = 'operator' | 'prompter' | 'stage';
+
 export interface KaraokeSettings {
   fontSize: number;
   fontFamily: string;
@@ -13,7 +15,10 @@ export interface KaraokeSettings {
   finishedColor: string;
   lyricsPosition: 'bottom' | 'center';
   bumperFadeDuration: number;
-  isPresentationMode: boolean;
+  viewType: ViewType;
+  prompterBgColor: string; // e.g., '#000000', '#00ff00' for green screen
+  visualTheme: string; // shadertoy theme name
+  audioReactivity: number; // sensitivity 0 to 1
 }
 
 export interface SongQueueItem {
@@ -58,5 +63,8 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   finishedColor: '#ffd700',
   lyricsPosition: 'bottom',
   bumperFadeDuration: 1.5,
-  isPresentationMode: false,
+  viewType: 'operator',
+  prompterBgColor: '#000000',
+  visualTheme: 'vibrant_nebula',
+  audioReactivity: 0.5,
 };

@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LyricLine, KaraokeSettings, SongQueueItem } from '../types';
+import { LyricLine, KaraokeSettings, SongQueueItem, ViewType } from '../types';
 import { usePitchDetection } from '../hooks/usePitchDetection';
+import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
+import { VisualBackground } from './VisualBackground';
 import { Mic, Music, Play, Pause, RotateCcw, Award, Trophy, ListMusic } from 'lucide-react';
+import { io } from 'socket.io-client';
 
 declare global {
   interface Window {
@@ -62,6 +65,14 @@ export default function KaraokeStage({
   const ytPlayerRef = useRef<any>(null);
   const [ytReady, setYtReady] = useState(false);
   const pitch = usePitchDetection(phase === 'main' && isPlaying);
+  const { data: fftData, initAnalyzer } = useAudioAnalyzer(isPlaying && phase === 'main');
+
+  // Connect analyzer when media ready
+  useEffect(() => {
+    if (mainRef.current) {
+      initAnalyzer(mainRef.current);
+    }
+  }, [mainRef.current, mediaUrl]);
 
   // Sound FX System (No assets needed, using Oscillator)
   const playSFX = (type: 'win' | 'score' | 'start') => {
@@ -267,7 +278,7 @@ export default function KaraokeStage({
     setScore(0);
 
     // Broadcast if operator
-    if (!settings.isPresentationMode) {
+    if (settings.viewType === 'operator') {
       const bc = new BroadcastChannel('karaoke-sync');
       bc.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperUrl ? 'bumper' : 'main' } });
       bc.close();
@@ -292,7 +303,7 @@ export default function KaraokeStage({
     }, 1000);
 
     // Auto-advance queue if not operator (operator handles it via tab sync)
-    if (settings.isPresentationMode && queue.length > 0) {
+    if (settings.viewType !== 'operator' && queue.length > 0) {
       // Logic for auto-next can be handled by operator resending media sync
       // But for now we show the 'Win' screen. 
     }
@@ -305,19 +316,19 @@ export default function KaraokeStage({
     setScore(0);
 
     // Broadcast if operator
-    if (!settings.isPresentationMode) {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
-      bc.close();
+    if (settings.viewType === 'operator') {
+      const socket = io();
+      socket.emit('karaoke-sync', { type: 'COMMAND', payload: { action: 'RESET' } });
+      socket.disconnect();
     }
   };
 
   useEffect(() => {
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.onmessage = (event) => {
-      if (!settings.isPresentationMode) return; // Only presentation mode listens
+    const socket = io();
+    socket.on('karaoke-sync', (message: any) => {
+      if (settings.viewType === 'operator') return; // Only secondary views listen
 
-      const { type, payload } = event.data;
+      const { type, payload } = message;
       if (type === 'COMMAND') {
         switch (payload.action) {
           case 'START':
@@ -339,9 +350,23 @@ export default function KaraokeStage({
             break;
         }
       }
+    });
+
+    // Fallback broadcast channel for local blobs
+    const bc = new BroadcastChannel('karaoke-sync-local');
+    bc.onmessage = (event) => {
+      if (settings.viewType === 'operator') return;
+      const { type, payload } = event.data;
+      if (type === 'COMMAND' && payload.action === 'QUEUE_SYNC') {
+         setQueue(payload);
+      }
     };
-    return () => bc.close();
-  }, [settings.isPresentationMode, bumperUrl, mediaUrl]);
+
+    return () => {
+      socket.disconnect();
+      bc.close();
+    };
+  }, [settings.viewType, bumperUrl, mediaUrl]);
 
   // Refined YouTube initialization with interval check for YT global
   useEffect(() => {
@@ -438,10 +463,10 @@ export default function KaraokeStage({
   const togglePlayback = () => {
     const newState = !isPlaying;
     setIsPlaying(newState);
-    if (!settings.isPresentationMode) {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
-      bc.close();
+    if (settings.viewType === 'operator') {
+      const socket = io();
+      socket.emit('karaoke-sync', { type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
+      socket.disconnect();
     }
   };
 
@@ -451,30 +476,33 @@ export default function KaraokeStage({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && settings.isPresentationMode) {
+      if (e.key === 'Escape' && settings.viewType !== 'operator') {
         // Redirect to operator view
         window.location.href = window.location.origin + window.location.pathname + '?view=operator';
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [settings.isPresentationMode]);
+  }, [settings.viewType]);
 
   return (
-    <div className="relative w-full h-full bg-black flex flex-col items-center justify-center overflow-hidden">
+    <div 
+      className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden transition-colors duration-1000"
+      style={{ backgroundColor: settings.viewType === 'prompter' ? settings.prompterBgColor : '#000000' }}
+    >
       {/* Rescue Link for Operators stuck in Singer View */}
-      {settings.isPresentationMode && phase === 'idle' && (
+      {settings.viewType === 'operator' && phase === 'idle' && (
         <div className="absolute bottom-6 right-6 opacity-0 hover:opacity-100 transition-opacity z-[100]">
            <a 
              href="?view=operator" 
              className="text-[9px] font-mono text-white/20 hover:text-brand-gold uppercase tracking-widest border border-white/5 bg-black/40 px-3 py-1.5 rounded-full"
            >
-             Exit to Studio Console (Esc)
+             Operator console loaded
            </a>
         </div>
       )}
       <AnimatePresence>
-        {phase === 'idle' && (
+        {phase === 'idle' && settings.viewType === 'operator' && (
           <motion.div
             key="idle"
             initial={{ opacity: 0 }}
@@ -483,36 +511,17 @@ export default function KaraokeStage({
             className="z-50 text-center px-12"
           >
             <h1 className="text-6xl font-display font-bold mb-4 tracking-tighter text-brand-gold">
-              {settings.isPresentationMode ? "PROKARAOKE STUDIO" : "READY TO ROCK?"}
+              READY TO ROCK?
             </h1>
             
             <div className="flex flex-col gap-6 items-center">
-              {!mediaUrl && settings.isPresentationMode ? (
-                <div className="flex flex-col items-center gap-6">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-12 h-12 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
-                    <p className="text-white/40 font-mono text-[10px] uppercase tracking-[0.2em] animate-pulse">Waiting for media from operator...</p>
-                  </div>
-                  
-                  <div className="pt-8 border-t border-white/5 flex flex-col items-center gap-3">
-                    <p className="text-[10px] text-white/20 uppercase tracking-widest">Are you the operator?</p>
-                    <a 
-                      href="?view=operator" 
-                      className="px-6 py-2 border border-brand-gold/30 text-brand-gold text-xs font-mono rounded-full hover:bg-brand-gold/10 transition-colors uppercase tracking-widest"
-                    >
-                      Enter Operator Console
-                    </a>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={handleStart}
-                  disabled={!mediaUrl && !bumperUrl}
-                  className={`px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
-                >
-                  <Play size={24} fill="currentColor" /> {settings.isPresentationMode ? "WAITING FOR START" : "START SHOW"}
-                </button>
-              )}
+              <button
+                onClick={handleStart}
+                disabled={!mediaUrl && !bumperUrl}
+                className={`px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
+              >
+                <Play size={24} fill="currentColor" /> START SHOW
+              </button>
 
               <div className="flex flex-wrap justify-center gap-x-8 gap-y-4 max-w-xl mx-auto">
                 <div className="flex flex-col gap-1 items-center">
@@ -540,21 +549,6 @@ export default function KaraokeStage({
                   </div>
                 )}
               </div>
-
-              {/* Show Next in Queue for Performer */}
-              {settings.isPresentationMode && queue.length > 0 && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-12 p-6 glass-panel border-brand-gold/10 flex flex-col items-center gap-3"
-                >
-                   <span className="text-[9px] uppercase tracking-[0.3em] text-brand-gold font-mono font-bold">Coming Up Next</span>
-                   <div className="flex items-center gap-4">
-                      <ListMusic size={20} className="text-white/20" />
-                      <span className="text-2xl font-display font-bold text-white/80">{queue[0].title}</span>
-                   </div>
-                </motion.div>
-              )}
             </div>
           </motion.div>
         )}
@@ -601,11 +595,17 @@ export default function KaraokeStage({
             ) : null}
 
             {/* Media Player */}
-            {isYouTube ? (
+            {settings.viewType === 'stage' ? (
+               <VisualBackground 
+                 fftData={fftData} 
+                 theme={settings.visualTheme} 
+                 sensitivity={settings.audioReactivity} 
+               />
+            ) : isYouTube ? (
               <div className="absolute inset-0 flex items-center justify-center overflow-hidden z-20 bg-black">
                 <div 
                   id={`yt-player-${youtubeId}`} 
-                  className={`w-full aspect-video transition-all duration-1000 ${settings.isPresentationMode ? 'opacity-80 scale-[1.02]' : 'opacity-100'}`}
+                  className={`w-full aspect-video transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.02]' : 'opacity-100'}`}
                 />
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
@@ -655,7 +655,7 @@ export default function KaraokeStage({
             )}
 
             {/* UI Overlays */}
-            {!settings.isPresentationMode && (
+            {settings.viewType === 'operator' && (
               <div className="absolute top-8 left-8 right-8 flex justify-between items-start pointer-events-none z-50">
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-3 bg-black/40 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10">
@@ -684,7 +684,8 @@ export default function KaraokeStage({
             )}
 
             {/* Singer-focused Scoring UI (Center focus in Presentation Mode) */}
-            <div className={`absolute top-12 left-1/2 -translate-x-1/2 w-full max-w-xl px-12 transition-all duration-500 z-50 ${settings.isPresentationMode ? 'scale-110 top-16' : 'opacity-60'}`}>
+            {settings.viewType === 'operator' && (
+              <div className={`absolute top-12 left-1/2 -translate-x-1/2 w-full max-w-xl px-12 transition-all duration-500 z-50 ${settings.viewType !== 'operator' ? 'scale-110 top-16' : 'opacity-60'}`}>
               <div className="flex flex-col items-center gap-3">
                 {/* Nuanced Feedback Labels */}
                 <AnimatePresence>
@@ -696,9 +697,22 @@ export default function KaraokeStage({
                       className="flex gap-4 mb-2"
                     >
                       {pitchFeedback && (
-                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${pitchFeedback.includes('Perfect') ? 'bg-green-500 text-black' : 'bg-brand-gold text-black'}`}>
+                        <motion.div 
+                          initial={{ scale: 0.8, filter: 'blur(4px)' }}
+                          animate={{ scale: pitchFeedback.includes('Perfect') ? 1.1 : 1, filter: 'blur(0px)' }}
+                          transition={{ type: 'spring', stiffness: 300 }}
+                          className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 shadow-lg ${
+                            pitchFeedback === 'Too High' ? 'bg-orange-500 text-black shadow-[0_0_15px_rgba(249,115,22,0.6)]' :
+                            pitchFeedback === 'Too Low' ? 'bg-blue-500 text-black shadow-[0_0_15px_rgba(59,130,246,0.6)]' :
+                            pitchFeedback === 'Perfect Pitch' ? 'bg-green-400 text-black shadow-[0_0_20px_rgba(74,222,128,0.8)] animate-pulse' :
+                            'bg-brand-gold text-black shadow-[0_0_10px_rgba(255,215,0,0.5)]'
+                          }`}
+                        >
+                          {pitchFeedback === 'Too High' && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>}
+                          {pitchFeedback === 'Too Low' && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>}
+                          {pitchFeedback === 'Perfect Pitch' && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
                           {pitchFeedback}
-                        </div>
+                        </motion.div>
                       )}
                       {timingFeedback && (
                         <div className="px-3 py-1 rounded-full bg-white text-black text-[10px] font-bold uppercase tracking-widest">
@@ -723,7 +737,7 @@ export default function KaraokeStage({
                     <Mic size={10} className="text-brand-gold" />
                     <span className="text-[10px] font-mono text-white/40 uppercase tracking-tighter">Live Vocal Match</span>
                   </div>
-                  {settings.isPresentationMode && (
+                   {settings.viewType === 'operator' && (
                     <motion.span 
                       key={score}
                       initial={{ scale: 1.2, color: '#fff' }}
@@ -733,13 +747,15 @@ export default function KaraokeStage({
                       {score.toLocaleString()}
                     </motion.span>
                   )}
-                  <span className="text-[10px] font-mono text-brand-gold uppercase tracking-[0.2em] font-bold">{currentAccuracy}%</span>
-                </div>
-              </div>
-            </div>
+          <span className="text-[10px] font-mono text-brand-gold uppercase tracking-[0.2em] font-bold">{currentAccuracy}%</span>
+        </div>
+      </div>
+    </div>
+  )}
 
             {/* Lyrics Layer (Clean Feed) */}
-            <div className={`absolute left-0 right-0 px-16 pointer-events-none z-40 transition-all duration-1000 ${settings.lyricsPosition === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-32'}`}>
+            {settings.viewType !== 'stage' && (
+              <div className={`absolute left-0 right-0 px-16 pointer-events-none z-40 transition-all duration-1000 ${settings.lyricsPosition === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-32'}`}>
               <div className="max-w-5xl mx-auto text-center">
                 <AnimatePresence mode="wait">
                   {activeLyric ? (
@@ -754,7 +770,7 @@ export default function KaraokeStage({
                       <div
                         className="font-black leading-[1.1] drop-shadow-[0_8px_32px_rgba(0,0,0,0.9)] tracking-tighter"
                         style={{
-                          fontSize: `${settings.isPresentationMode ? settings.fontSize * 1.5 : settings.fontSize}px`,
+                          fontSize: `${settings.viewType === 'prompter' ? settings.fontSize * 1.8 : settings.fontSize}px`,
                           fontFamily: settings.fontFamily,
                           transition: 'color 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                         }}
@@ -801,10 +817,11 @@ export default function KaraokeStage({
                 </AnimatePresence>
               </div>
             </div>
+           )}
           </motion.div>
         )}
 
-        {phase === 'finished' && (
+        {phase === 'finished' && settings.viewType === 'operator' && (
           <motion.div
             key="finished"
             initial={{ scale: 0.8, opacity: 0 }}

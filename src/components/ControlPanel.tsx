@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
-import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome } from 'lucide-react';
+import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
+import { io } from 'socket.io-client';
 
 interface ControlPanelProps {
   settings: KaraokeSettings;
@@ -46,8 +47,14 @@ export default function ControlPanel({
     return parsed;
   });
   const [queue, setQueue] = React.useState<SongQueueItem[]>(() => {
-    const saved = localStorage.getItem('karaoke_queue');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('karaoke_queue');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error("Failed to load queue", e);
+      return [];
+    }
   });
   const [fragmentShader, setFragmentShader] = React.useState<string>(`
     precision mediump float;
@@ -190,9 +197,9 @@ export default function ControlPanel({
 
   const finalizeMaker = () => {
     onParseLyrics(makerLyrics);
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.postMessage({ type: 'LYRICS_SYNC', payload: session.lyrics });
-    bc.close();
+    const socket = io();
+    socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: session.lyrics });
+    socket.disconnect();
     setActiveTab('config');
   };
 
@@ -202,7 +209,7 @@ export default function ControlPanel({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const nextLyric = session.lyrics.find(l => l.startTime > playbackState.currentTime);
+  const nextLyric = (session.lyrics || []).find(l => l && l.startTime > playbackState.currentTime);
 
   const handleFileUpload = (type: keyof KaraokeSession) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -215,18 +222,21 @@ export default function ControlPanel({
          import('../lib/lyricParser').then(({ parseLyrics }) => {
             const parsed = parseLyrics(content);
             onParseLyrics(content);
-            const bc = new BroadcastChannel('karaoke-sync');
-            bc.postMessage({ type: 'LYRICS_SYNC', payload: parsed });
-            bc.close();
+            const socket = io();
+            socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: parsed });
+            socket.disconnect();
          });
        };
        reader.readAsText(file);
     } else {
        const url = URL.createObjectURL(file);
        onMediaUpload(type as string, file, url);
-       const bc = new BroadcastChannel('karaoke-sync');
+       
+       // Binary file broadcast fallback
+       const bc = new BroadcastChannel('karaoke-sync-local');
        bc.postMessage({ type: 'MEDIA_SYNC', payload: { mediaType: type, file } });
        bc.close();
+       
        if (type === 'mediaUrl') {
          const { bpm, key } = await analyzeAudio(url);
          setSession(prev => ({ ...prev, mediaUrl: url, bpm, musicalKey: key }));
@@ -241,10 +251,10 @@ export default function ControlPanel({
   };
 
   const handleManualSync = () => {
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.postMessage({ type: 'SETTINGS_SYNC', payload: settings });
-    bc.postMessage({ type: 'LYRICS_SYNC', payload: session.lyrics });
-    bc.close();
+    const socket = io();
+    socket.emit('karaoke-sync', { type: 'SETTINGS_SYNC', payload: settings });
+    socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: session.lyrics });
+    socket.disconnect();
   };
 
   const loadSample = () => {
@@ -276,11 +286,11 @@ export default function ControlPanel({
             <Music size={14} />
           </button>
           <button 
-            onClick={() => updateSetting('isPresentationMode', !settings.isPresentationMode)}
-            className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-all shadow-sm ${settings.isPresentationMode ? 'bg-brand-gold text-black border-brand-gold' : 'border-white/10 text-white/40 hover:border-white/30'}`}
-            title={settings.isPresentationMode ? "Exit Presentation Mode" : "Enter Presentation Mode"}
+            onClick={() => updateSetting('viewType', settings.viewType === 'operator' ? 'prompter' : 'operator')}
+            className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-all shadow-sm ${settings.viewType !== 'operator' ? 'bg-brand-gold text-black border-brand-gold' : 'border-white/10 text-white/40 hover:border-white/30'}`}
+            title={settings.viewType !== 'operator' ? "Exit Performer View" : "Enter Performer View"}
           >
-            {settings.isPresentationMode ? <EyeOff size={18} /> : <Eye size={18} />}
+            {settings.viewType !== 'operator' ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
       </div>
@@ -819,27 +829,112 @@ void main() {
                </div>
             </section>
 
-            {/* Singer Monitor */}
+            {/* Production Monitors */}
             <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                 <h3 className="input-label flex items-center gap-2 m-0"><Layout size={14} className="text-brand-gold" /> Singer Monitor</h3>
-                 <div className="flex items-center gap-3">
-                   <button 
-                     onClick={handleManualSync}
-                     className="text-[9px] font-mono text-brand-gold hover:text-white transition-colors bg-brand-gold/5 px-2 py-1 rounded border border-brand-gold/20"
-                   >
-                     RE-SYNC
-                   </button>
-                   <a 
-                     href={`${window.location.origin}${window.location.pathname}?view=singer`} 
-                     target="_blank" 
-                     rel="noreferrer"
-                     className="text-[9px] font-mono text-brand-gold underline"
-                   >
-                     OPEN VIEW
-                   </a>
-                 </div>
+              <h3 className="input-label flex items-center gap-2 m-0"><Chrome size={14} className="text-brand-gold" /> Output Manager</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <button 
+                    onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=prompter`, 'prompter', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                    className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-black/50 border border-brand-gold/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <MonitorPlay size={20} className="text-white/70 group-hover:text-brand-gold" />
+                    </div>
+                    <div>
+                      <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight">Prompter <br />Window</h4>
+                    </div>
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=prompter`);
+                      const el = e.currentTarget.querySelector('span');
+                      if(el) { el.innerText = 'COPIED!'; setTimeout(() => el.innerText = 'COPY BROWSER URL', 2000); }
+                    }}
+                    className="flex justify-center items-center gap-1.5 text-[9px] font-bold text-white/30 hover:text-brand-gold transition-colors py-2 bg-white/5 rounded-lg"
+                  >
+                    <Copy size={10} /> <span>COPY BROWSER URL</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <button 
+                    onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=visuals`, 'visuals', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                    className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-black/50 border border-[#ff0055]/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <ExternalLink size={20} className="text-white/70 group-hover:text-[#ff0055]" />
+                    </div>
+                    <div>
+                      <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight">Visuals <br />Output</h4>
+                    </div>
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=visuals`);
+                      const el = e.currentTarget.querySelector('span');
+                      if(el) { el.innerText = 'COPIED!'; setTimeout(() => el.innerText = 'COPY BROWSER URL', 2000); }
+                    }}
+                    className="flex justify-center items-center gap-1.5 text-[9px] font-bold text-white/30 hover:text-[#ff0055] transition-colors py-2 bg-white/5 rounded-lg"
+                  >
+                    <Copy size={10} /> <span>COPY BROWSER URL</span>
+                  </button>
+                </div>
               </div>
+
+              <div className="p-3 border border-brand-gold/20 bg-brand-gold/5 text-brand-gold rounded-xl space-y-2">
+                <p className="text-[10px] leading-relaxed font-mono uppercase tracking-wide opacity-90 border-b border-brand-gold/10 pb-2">
+                  <strong>Method 1: Windows Projecting</strong><br/>
+                  Click the large window buttons to launch a clean feed. Drag this window to your projector or capture it using OBS "Window Capture". (Recommended for perfect sync).
+                </p>
+                <p className="text-[10px] leading-relaxed font-mono uppercase tracking-wide opacity-90">
+                  <strong>Method 2: Directly via URL</strong><br/>
+                  Copy the URL to load as a direct hardware input or OBS Browser Source.
+                </p>
+              </div>
+
+              <button 
+                onClick={handleManualSync}
+                className="w-full py-3 flex items-center justify-center gap-2 text-[10px] uppercase font-mono text-white/50 bg-black/40 rounded-xl border border-white/10 hover:text-white hover:border-brand-gold/50 transition-all"
+              >
+                <RotateCcw size={14} /> Force Sync to Windows
+              </button>
+            </section>
+
+            {/* Custom Color Overrides for Prompter */}
+            <section className="space-y-3">
+              <h3 className="input-label m-0">Prompter Mode Settings</h3>
+              <div className="flex bg-black/40 p-1 rounded-lg border border-white/10">
+                 <button 
+                  onClick={() => updateSetting('prompterBgColor', '#000000')} 
+                  className={`flex-1 py-1 text-[9px] rounded flex items-center justify-center gap-2 ${settings.prompterBgColor === '#000000' ? 'bg-white/10' : ''}`}
+                 >
+                   <div className="w-2 h-2 rounded-full bg-black border border-white/20" /> Black
+                 </button>
+                 <button 
+                  onClick={() => updateSetting('prompterBgColor', '#00ff00')} 
+                  className={`flex-1 py-1 text-[9px] rounded flex items-center justify-center gap-2 ${settings.prompterBgColor === '#00ff00' ? 'bg-white/10' : ''}`}
+                 >
+                   <div className="w-2 h-2 rounded-full bg-green-500" /> Green Screen
+                 </button>
+              </div>
+            </section>
+
+            {/* Stage Visual Sensitivity */}
+            <section className="space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="input-label m-0">Visual Reactivity</h3>
+                <span className="text-[9px] font-mono text-brand-gold">{Math.round(settings.audioReactivity * 100)}%</span>
+              </div>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.01" 
+                value={settings.audioReactivity} 
+                onChange={(e) => updateSetting('audioReactivity', parseFloat(e.target.value))} 
+                className="w-full accent-brand-gold h-1" 
+              />
             </section>
 
             {/* File Configuration */}

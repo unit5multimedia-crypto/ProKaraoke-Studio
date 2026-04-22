@@ -27,7 +27,17 @@ Follow these architectural guidelines to ensure consistency with the Lead Engine
   - `COMMAND`: Control signals (`PLAY`, `PAUSE`, `LOAD`).
   - `MEDIA_SYNC`: Syncs media URLs or base64 data between tabs.
 
-## 5. Coding Standards
-- **Imports:** Use named imports. Keep styles in Tailwind classes.
-- **State:** Prefer `useMemo` for derived layout logic (like character-by-character lyric coloring).
-- **Safety:** Wrap all YouTube API calls (`getCurrentTime`, `playVideo`) in `try-catch` blocks and check for existence before calling.
+## 6. Stage Visual View (The Concert)
+- **Engine:** Use a WebGL `<canvas>` for rendering GLSL Shaders (Shadertoy style).
+- **Audio Reactivity:** Pass `fftData` from the `AudioContext` as a uniform `u_audio` (float array) to the shader.
+- **Goal:** Immersive, abstract visuals that react to frequency bands (Bass, Mid, High).
+
+## 7. Prompter View (Singer Mode)
+- **Aesthetic:** Minimalist. No scores, no distractions.
+- **Customization:** Support `prompterBgColor` (e.g., #00ff00 for Green Screen background).
+- **Lyrics:** Massive font size for far-distance reading on stage monitors.
+
+## 8. Lyric Maker Architecture
+- **State:** Use a `buffer` to store raw text and timestamps.
+- **Workflow:** User "Taps" a key while the song plays to mark the start/end of each line.
+- **Export:** Output should be a valid `LyricLine[]` array.

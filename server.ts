@@ -1,5 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import { createServer } from "http";
+import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
@@ -11,7 +13,24 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  const server = createServer(app);
+  const io = new Server(server, { cors: { origin: "*" } }); // Setup WebSocket relay
+
   const PORT = 3000;
+
+  // Websocket relay logic: when the Operator sends a message, bounce it to all other connected clients (OBS / Tabs)
+  io.on("connection", (socket) => {
+    console.log("Client connected:", socket.id);
+    
+    // Relay exact message to all OTHER clients
+    socket.on("karaoke-sync", (data) => {
+      socket.broadcast.emit("karaoke-sync", data);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Client disconnected:", socket.id);
+    });
+  });
 
   // Use trust proxy since we are behind a proxy (AI Studio/Cloud Run)
   app.set("trust proxy", true);
@@ -123,7 +142,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
