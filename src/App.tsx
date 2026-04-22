@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { KaraokeSettings, KaraokeSession, DEFAULT_SETTINGS } from './types';
 import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
+import VisualStage from './components/VisualStage';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
 
@@ -34,6 +35,7 @@ export default function App() {
   const sessionRef = useRef(session);
   const settingsRef = useRef(settings);
   const mediaFilesRef = useRef<Record<string, File>>({});
+  const [localFiles, setLocalFiles] = useState<File[]>([]);
 
   // Keep refs in sync with state for broadcast handlers
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -44,10 +46,12 @@ export default function App() {
     
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
-    const isSingerView = viewParam === 'singer';
     
-    if (isSingerView) {
+    if (viewParam === 'prompter') {
       setSettings(prev => ({ ...prev, isPresentationMode: true }));
+      setIsSidebarOpen(false);
+    } else if (viewParam === 'stage') {
+      setSettings(prev => ({ ...prev, isPresentationMode: false })); // Or custom for stage
       setIsSidebarOpen(false);
     } else if (viewParam === 'operator') {
       setSettings(prev => ({ ...prev, isPresentationMode: false }));
@@ -106,8 +110,8 @@ export default function App() {
       }
     };
 
-    // If singer view, request current state from any open operator tab
-    if (isSingerView) {
+    // If prompter or stage view, request current state from operator
+    if (viewParam === 'prompter' || viewParam === 'stage') {
       setTimeout(() => {
         console.log('Sending sync request to operator...');
         broadcastRef.current?.postMessage({ type: 'SYNC_REQUEST' });
@@ -126,6 +130,31 @@ export default function App() {
     return () => {
       broadcastRef.current?.close();
     };
+  }, []);
+
+  // Electron reset views listener
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.onResetViews(() => {
+        setSession({
+          bumperUrl: null,
+          mediaUrl: null,
+          backgroundUrl: null,
+          isAudioOnly: false,
+          lyrics: [],
+          bpm: null,
+          musicalKey: null,
+          duration: 0,
+        });
+        setPlaybackState({
+          currentTime: 0,
+          phase: 'idle',
+          isPlaying: false,
+          duration: 0
+        });
+        setSettings(DEFAULT_SETTINGS);
+      });
+    }
   }, []);
 
   const handleMediaUpload = useCallback((type: string, file: File, url: string) => {
@@ -150,10 +179,12 @@ export default function App() {
     });
   }, []);
 
+  const viewParam = new URLSearchParams(window.location.search).get('view') || 'operator';
+
   return (
     <div className="flex h-screen w-full bg-brand-dark overflow-hidden font-sans">
       {/* Sidebar / Console */}
-      {!settings.isPresentationMode && (
+      {viewParam === 'operator' && (
         <div 
           className={`transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
           style={{ width: isSidebarOpen ? '380px' : '0' }}
@@ -166,12 +197,13 @@ export default function App() {
             onParseLyrics={handleLyricsContent}
             onMediaUpload={handleMediaUpload}
             playbackState={playbackState}
+            localFiles={localFiles}
           />
         </div>
       )}
 
       {/* Toggle Button (Hidden in presentation mode) */}
-      {!settings.isPresentationMode && (
+      {viewParam === 'operator' && (
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="fixed top-8 left-4 z-[100] w-10 h-10 glass-panel flex items-center justify-center hover:bg-white/10 transition-colors"
@@ -182,12 +214,20 @@ export default function App() {
 
       {/* Main Stage */}
       <main className="flex-1 relative overflow-hidden flex-col">
-        <KaraokeStage 
-          {...session}
-          settings={settings}
-          onStateUpdate={handleStageUpdate}
-          onMediaUpload={handleMediaUpload}
-        />
+        {(viewParam === 'operator' || viewParam === 'prompter') ? (
+          <KaraokeStage 
+            {...session}
+            settings={settings}
+            onStateUpdate={handleStageUpdate}
+            onMediaUpload={handleMediaUpload}
+          />
+        ) : viewParam === 'stage' ? (
+          <VisualStage 
+            session={session}
+            settings={settings}
+            playbackState={playbackState}
+          />
+        ) : null}
         
         {/* Status Bar */}
         {!settings.isPresentationMode && (
