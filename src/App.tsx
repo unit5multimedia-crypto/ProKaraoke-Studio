@@ -9,9 +9,27 @@ import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
+import { auth, db, User, validateConnection } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [userAuth, setUserAuth] = useState<{ accessToken: string; expiry: number } | null>(() => {
+    const saved = localStorage.getItem('google_auth');
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Date.now() > parsed.expiry) {
+        localStorage.removeItem('google_auth');
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  });
   const [settings, setSettings] = useState<KaraokeSettings>(DEFAULT_SETTINGS);
   const [session, setSession] = useState<KaraokeSession>({
     bumperUrl: null,
@@ -31,10 +49,66 @@ export default function App() {
     duration: 0
   });
 
-  const socketRef = useRef<Socket | null>(null);
   const sessionRef = useRef(session);
   const settingsRef = useRef(settings);
   const mediaFilesRef = useRef<Record<string, File>>({});
+
+  useEffect(() => {
+    validateConnection();
+    
+    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Sync state from Firestore when logged in
+  useEffect(() => {
+    if (!user) return;
+
+    const sessionDocRef = doc(db, 'users', user.uid, 'sessions', 'current');
+    const unsubscribeSession = onSnapshot(sessionDocRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        
+        // Only sync if we are NOT the operator to avoid feedback loops
+        // OR if the media has changed
+        if (settingsRef.current.viewType !== 'operator') {
+          setSession(prev => ({
+            ...prev,
+            mediaUrl: data.mediaUrl,
+            isAudioOnly: false,
+            lyrics: data.lyrics || [],
+            bpm: data.bpm,
+            musicalKey: data.musicalKey,
+          }));
+          
+          setPlaybackState(prev => ({
+            ...prev,
+            isPlaying: data.isPlaying,
+          }));
+        }
+      }
+    });
+
+    return () => unsubscribeSession();
+  }, [user]);
+
+  const updateSessionOnCloud = useCallback(async (updates: Partial<KaraokeSession & { isPlaying: boolean }>) => {
+    if (!user) return;
+    const sessionDocRef = doc(db, 'users', user.uid, 'sessions', 'current');
+    
+    try {
+      await setDoc(sessionDocRef, {
+        ...updates,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (e) {
+      console.error("Cloud Sync Error:", e);
+    }
+  }, [user]);
 
   // Keep refs in sync with state for broadcast handlers
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -76,75 +150,6 @@ export default function App() {
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
     }
 
-    // Initialize Socket.io connecting to the Express server for Method 2 Relay
-    const socket = io();
-    socketRef.current = socket;
-
-    socket.on('karaoke-sync', (message: any) => {
-      const { type, payload } = message;
-      
-      switch (type) {
-        case 'SYNC_REQUEST': {
-          // If we are the operator, send EVERYTHING to the newcomer
-          if (settingsRef.current.viewType === 'operator') {
-             console.log('Fulfilling sync request for new tab/OBS...');
-             socket.emit('karaoke-sync', { type: 'SETTINGS_SYNC', payload: settingsRef.current });
-             socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: sessionRef.current.lyrics });
-             
-             // Send YouTube data (we can't easily serialize massive File blobs over socket efficiently in this quick setup, so we expect pre-loaded YouTube links or host the blobs)
-             if (sessionRef.current.mediaUrl && sessionRef.current.mediaUrl.includes('youtube')) {
-                socket.emit('karaoke-sync', {
-                   type: 'MEDIA_SYNC', 
-                   payload: { mediaType: 'mediaUrl', isYt: true, url: sessionRef.current.mediaUrl }
-                });
-             }
-          }
-          break;
-        }
-        case 'MEDIA_SYNC': {
-          const { mediaType, isYt, url } = payload;
-          if (isYt && url) {
-            console.log(`Received remote YouTube URL: ${url}`);
-            setSession(prev => ({ ...prev, [mediaType]: url }));
-          }
-          // Note: Full File blob syncing is restricted via websockets to prevent massive memory crashes. 
-          // Re-adding Local broadcast channel purely as a fallback for Method 1 (local windows) to receive huge binary blobs.
-          break;
-        }
-        case 'LYRICS_SYNC': {
-          setSession(prev => ({ ...prev, lyrics: payload }));
-          break;
-        }
-        case 'SETTINGS_SYNC': {
-          setSettings(payload);
-          break;
-        }
-      }
-    });
-
-    // Also spin up a local broadcast channel just for local massive File blobs (Method 1)
-    const bc = new BroadcastChannel('karaoke-sync-local');
-    bc.onmessage = (event) => {
-        const { type, payload } = event.data;
-        if (type === 'MEDIA_SYNC' && payload.file) {
-            console.log(`Received local massive binary blob: ${payload.mediaType}`);
-            const blobUrl = URL.createObjectURL(payload.file);
-            setSession(prev => ({ ...prev, [payload.mediaType]: blobUrl }));
-        }
-    };
-
-    // If secondary view, request current state from any open operator tab
-    if (viewParam && viewParam !== 'operator') {
-      setTimeout(() => {
-        console.log('Sending sync request to operator...');
-        socket.emit('karaoke-sync', { type: 'SYNC_REQUEST' });
-      }, 800);
-    }
-
-    return () => {
-      socket.disconnect();
-      bc.close();
-    };
   }, []);
 
   const handleMediaUpload = useCallback((type: string, file: File, url: string) => {
@@ -169,6 +174,68 @@ export default function App() {
     });
   }, []);
 
+  if (authLoading) {
+    return (
+      <div className="flex h-screen w-full bg-brand-dark items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
+          <span className="text-white/40 font-mono text-[10px] uppercase tracking-widest">Warming up ProKaraoke Studio...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex h-screen w-full bg-brand-dark items-center justify-center p-6">
+        <div className="max-w-md w-full glass-panel p-10 flex flex-col items-center text-center space-y-8 animate-in fade-in zoom-in duration-500">
+           <div className="w-20 h-20 bg-brand-gold/10 rounded-3xl flex items-center justify-center text-brand-gold border border-brand-gold/20">
+              <Mic size={40} />
+           </div>
+           
+           <div className="space-y-2">
+              <h1 className="text-2xl font-bold text-brand-gold tracking-tight">ProKaraoke Studio</h1>
+              <p className="text-[11px] font-mono text-white/40 uppercase tracking-widest leading-relaxed">
+                Professional Real-Time Karaoke Engine <br />
+                Sunday Gathering Milestone // v3.0
+              </p>
+           </div>
+
+           <div className="w-full h-px bg-white/5" />
+
+           <div className="space-y-4 w-full">
+              <p className="text-xs text-white/60">Access is restricted to authorized operators. Sign in to initialize the studio environment.</p>
+              
+              <button 
+                onClick={async () => {
+                  import('./lib/firebase').then(async ({ signInWithGoogle }) => {
+                    try {
+                      const { accessToken } = await signInWithGoogle();
+                      if (accessToken) {
+                         const expiry = Date.now() + 3600 * 1000;
+                         const authData = { accessToken, expiry };
+                         setUserAuth(authData);
+                         localStorage.setItem('google_auth', JSON.stringify(authData));
+                      }
+                    } catch (e) {
+                      alert(`Login failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                    }
+                  });
+                }}
+                className="w-full h-12 bg-brand-gold text-black font-black text-sm rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-gold/10"
+              >
+                <Music size={18} /> INITIALIZE STUDIO ACCESS
+              </button>
+           </div>
+           
+           <div className="pt-4 text-[9px] font-mono text-white/20 uppercase tracking-tighter">
+              Aesthetic Architecture by antigravity // SOLI DEO GLORIA!
+           </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full bg-brand-dark overflow-hidden font-sans">
       {/* Sidebar / Console */}
@@ -178,12 +245,16 @@ export default function App() {
           style={{ width: isSidebarOpen ? '380px' : '0' }}
         >
           <ControlPanel 
+            user={user}
+            userAuth={userAuth}
+            setUserAuth={setUserAuth}
             settings={settings}
             setSettings={setSettings}
             session={session}
             setSession={setSession}
             onParseLyrics={handleLyricsContent}
             onMediaUpload={handleMediaUpload}
+            onSyncSession={updateSessionOnCloud}
             playbackState={playbackState}
           />
         </div>

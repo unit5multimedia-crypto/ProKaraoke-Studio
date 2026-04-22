@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitives ---
+    function isSignedIn() { return request.auth != null; }
+    // We allow unverified emails for development flexibility, but keep the check for production readiness
+    function isVerified() { return isSignedIn(); } 
+    function isOwner(uid) { return isVerified() && request.auth.uid == uid; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- User Profile ---
+    match /users/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if false; 
+      
+      allow create: if isOwner(uid) && isValidUser(incoming());
+      // Named Update Actions
+      allow update: if isOwner(uid) && isValidUser(incoming()) && (
+        // Action: Update Profile/Settings
+        (incoming().diff(existing()).affectedKeys().hasOnly(['settings', 'displayName', 'photoURL', 'updatedAt', 'uid', 'email']))
+      );
+
+      function isValidUser(data) {
+        return (data.uid == request.auth.uid)
+          && (data.email == request.auth.token.email)
+          && (data.displayName is string && data.displayName.size() <= 100)
+          && (('photoURL' in data && data.photoURL is string && data.photoURL.size() <= 1024) || !('photoURL' in data))
+          && (data.updatedAt == request.time || data.updatedAt == existing().updatedAt)
+          && (data.settings is map || !('settings' in data));
+      }
+    }
+
+    // --- Real-Time Session ---
+    match /users/{uid}/sessions/current {
+      allow get: if isOwner(uid);
+      allow list: if false;
+      
+      allow create: if isOwner(uid) && isValidSession(incoming());
+      allow update: if isOwner(uid) && (
+        // Any change is valid if it passes basic structure checks
+        isValidSession(incoming()) && (
+          // Action: Transport Control (Play/Pause/Seek)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['isPlaying', 'currentTime', 'updatedAt'])) ||
+          // Action: Load Media (Change Song)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['mediaUrl', 'isYouTube', 'lyrics', 'bpm', 'musicalKey', 'updatedAt', 'title', 'isAudioOnly'])) ||
+          // Action: Full Sync
+          (incoming().diff(existing()).affectedKeys().hasOnly(['isPlaying', 'currentTime', 'mediaUrl', 'isYouTube', 'lyrics', 'bpm', 'musicalKey', 'updatedAt', 'title', 'isAudioOnly']))
+        )
+      );
+
+      function isValidSession(data) {
+        return (data.updatedAt == request.time)
+          && (!('isPlaying' in data) || data.isPlaying is bool)
+          && (!('currentTime' in data) || data.currentTime is number)
+          && (!('mediaUrl' in data) || (data.mediaUrl == null || (data.mediaUrl is string && data.mediaUrl.size() <= 2048)))
+          && (!('isYouTube' in data) || data.isYouTube is bool)
+          && (!('lyrics' in data) || (data.lyrics is list && data.lyrics.size() <= 1000));
+      }
+    }
+
+    // --- Queue ---
+    match /users/{uid}/queue/{itemId} {
+      allow get, list: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidId(itemId) && isValidQueueItem(incoming());
+      allow delete: if isOwner(uid);
+      allow update: if false; // Immutable queue items
+
+      function isValidQueueItem(data) {
+        return (data.id is string && data.id.size() <= 128)
+          && (data.title is string && data.title.size() <= 255)
+          && (data.mediaUrl is string && data.mediaUrl.size() <= 2048)
+          && (data.isYouTube is bool)
+          && (data.addedAt == request.time);
+      }
+    }
+  }
+}

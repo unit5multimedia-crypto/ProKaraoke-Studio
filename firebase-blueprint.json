@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and persistent settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "settings": { "type": "object" }
+      },
+      "required": ["uid", "email"]
+    },
+    "SessionState": {
+      "title": "Live Session",
+      "description": "The current state of the karaoke session for real-time sync",
+      "type": "object",
+      "properties": {
+        "isPlaying": { "type": "boolean" },
+        "currentTime": { "type": "number" },
+        "mediaUrl": { "type": "string" },
+        "isYouTube": { "type": "boolean" },
+        "bpm": { "type": "number" },
+        "musicalKey": { "type": "string" },
+        "lyrics": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "QueueItem": {
+      "title": "Queue Item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "mediaUrl": { "type": "string" },
+        "isYouTube": { "type": "boolean" },
+        "addedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "Profile and individual user settings"
+    },
+    "/users/{uid}/sessions/current": {
+      "schema": "SessionState",
+      "description": "Real-time state for cross-window synchronization"
+    },
+    "/users/{uid}/queue/{itemId}": {
+      "schema": "QueueItem",
+      "description": "Personal song queue"
+    }
+  }
+}

@@ -17,6 +17,14 @@ export async function searchKaraoke(query: string, accessToken?: string): Promis
   if (keyOrToken) {
     try {
       const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${encodeURIComponent(query + " karaoke")}&type=video,playlist&${keyOrToken}`);
+      
+      if (!response.ok) {
+        if (response.status === 403) {
+          console.error("YouTube API 403: Ensure the YouTube Data API v3 is enabled in your Google Cloud Console for this project.");
+        }
+        return [];
+      }
+
       const data = await response.json();
       
       if (data.items) {

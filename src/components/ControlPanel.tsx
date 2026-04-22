@@ -1,49 +1,53 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
-import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy } from 'lucide-react';
+import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy, HardDrive, FileText, CloudDownload } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
-import { io } from 'socket.io-client';
+import { listDriveFiles, getFileContent, getDriveDownloadUrl, DriveFile } from '../services/googleDriveService';
+import { auth, signInWithGoogle, User } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 
 interface ControlPanelProps {
+  user: User | null;
+  userAuth: { accessToken: string; expiry: number } | null;
+  setUserAuth: (auth: { accessToken: string; expiry: number } | null) => void;
   settings: KaraokeSettings;
   setSettings: (s: KaraokeSettings) => void;
   session: KaraokeSession;
   setSession: React.Dispatch<React.SetStateAction<KaraokeSession>>;
   onParseLyrics: (content: string) => void;
   onMediaUpload: (type: string, file: File, url: string) => void;
+  onSyncSession?: (updates: any) => void;
   playbackState: { currentTime: number; phase: any; isPlaying: boolean; duration: number };
 }
 
 export default function ControlPanel({
+  user,
+  userAuth,
+  setUserAuth,
   settings,
   setSettings,
   session,
   setSession,
   onParseLyrics,
   onMediaUpload,
+  onSyncSession,
   playbackState
 }: ControlPanelProps) {
 
-  const [activeTab, setActiveTab] = React.useState<'config' | 'maker' | 'queue' | 'search'>('queue');
+  const [activeTab, setActiveTab] = React.useState<'config' | 'maker' | 'queue' | 'library'>('queue');
+  const [libraryView, setLibraryView] = React.useState<'online' | 'cloud' | 'local'>('online');
   const [makerLyrics, setMakerLyrics] = React.useState<string>("");
   const [makerLines, setMakerLines] = React.useState<string[]>([]);
   const [makerStep, setMakerStep] = React.useState(0);
   const [ytUrl, setYtUrl] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
+  const [driveFiles, setDriveFiles] = React.useState<DriveFile[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
-  const [userAuth, setUserAuth] = React.useState<{ accessToken: string; expiry: number } | null>(() => {
-    const saved = localStorage.getItem('google_auth');
-    if (!saved) return null;
-    const parsed = JSON.parse(saved);
-    if (Date.now() > parsed.expiry) {
-      localStorage.removeItem('google_auth');
-      return null;
-    }
-    return parsed;
-  });
+  const [isDriveLoading, setIsDriveLoading] = React.useState(false);
+
   const [queue, setQueue] = React.useState<SongQueueItem[]>(() => {
     try {
       const saved = localStorage.getItem('karaoke_queue');
@@ -55,43 +59,20 @@ export default function ControlPanel({
     }
   });
 
-  React.useEffect(() => {
-    const handleAuthMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) return;
-
-      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-        const tokens = event.data.payload;
-        const expiry = Date.now() + (tokens.expires_in * 1000);
-        const authData = { accessToken: tokens.access_token, expiry };
-        setUserAuth(authData);
-        localStorage.setItem('google_auth', JSON.stringify(authData));
-      }
-    };
-
-    window.addEventListener('message', handleAuthMessage);
-    return () => window.removeEventListener('message', handleAuthMessage);
-  }, []);
-
   const handleGoogleLogin = async () => {
     try {
-      const resp = await fetch('/api/auth/google/url');
-      const data = await resp.json();
-      
-      if (!resp.ok) {
-        throw new Error(data.error || `Server error: ${resp.status}`);
-      }
-
-      if (data.url) {
-        window.open(data.url, 'google_oauth', 'width=600,height=700');
+      const { accessToken } = await signInWithGoogle();
+      if (accessToken) {
+        setUserAuth({ accessToken, expiry: Date.now() + 3600 * 1000 });
       }
     } catch (e) {
       console.error("Auth error:", e);
-      alert(`Registration Error: ${e instanceof Error ? e.message : "Connection failed"}. \n\nTip: Ensure GOOGLE_CLIENT_ID is set in your .env file.`);
+      alert(`Login Error: ${e instanceof Error ? e.message : "Connection failed"}`);
     }
   };
 
-  const handleGoogleLogout = () => {
+  const handleGoogleLogout = async () => {
+    await signOut(auth);
     setUserAuth(null);
     localStorage.removeItem('google_auth');
   };
@@ -111,6 +92,48 @@ export default function ControlPanel({
     const results = await searchKaraoke(searchQuery, userAuth?.accessToken);
     setSearchResults(results);
     setIsSearching(false);
+  };
+
+  const loadDriveFiles = async (query: string = "") => {
+    if (!userAuth?.accessToken) return;
+    setIsDriveLoading(true);
+    try {
+      const files = await listDriveFiles(userAuth.accessToken, query);
+      setDriveFiles(files);
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "Failed to access Google Drive");
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  const handleDriveFileSelect = async (file: DriveFile) => {
+    if (!userAuth?.accessToken) return;
+    
+    // If it's a text file, it's likely lyrics
+    if (file.mimeType.startsWith('text/')) {
+       setIsDriveLoading(true);
+       const content = await getFileContent(file.id, userAuth.accessToken);
+       onParseLyrics(content);
+       setIsDriveLoading(false);
+       
+       if (onSyncSession) {
+         onSyncSession({ lyrics: session.lyrics });
+       }
+       alert(`Lyrics loaded from: ${file.name}`);
+    } 
+    // If it's video or audio, it's media
+    else if (file.mimeType.startsWith('video/') || file.mimeType.startsWith('audio/')) {
+       const url = getDriveDownloadUrl(file.id, userAuth.accessToken);
+       setSession(prev => ({ ...prev, mediaUrl: url, isAudioOnly: file.mimeType.startsWith('audio/') }));
+       
+       if (onSyncSession) {
+         onSyncSession({ mediaUrl: url, isYouTube: false, isAudioOnly: file.mimeType.startsWith('audio/') });
+       }
+       
+       alert(`Media loaded from: ${file.name}`);
+    }
   };
 
   const addToQueue = async (item: SearchResult) => {
@@ -138,21 +161,25 @@ export default function ControlPanel({
   };
 
   const loadFromQueue = (item: SongQueueItem) => {
-    setSession(prev => ({
-      ...prev,
+    const sessionUpdate = {
       mediaUrl: item.mediaUrl,
       lyrics: item.lyrics,
       isAudioOnly: false,
       bpm: item.bpm || null,
-      musicalKey: item.musicalKey || null
+      musicalKey: item.musicalKey || null,
+      isYouTube: item.isYouTube
+    };
+
+    setSession(prev => ({
+      ...prev,
+      ...sessionUpdate
     }));
     
     onParseLyrics(item.lyrics.map(l => `[${formatTime(l.startTime)}-${formatTime(l.endTime)}] ${l.text}`).join('\n'));
 
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.postMessage({ type: 'MEDIA_SYNC', payload: { mediaType: 'mediaUrl', isYt: item.isYouTube, url: item.mediaUrl } });
-    bc.postMessage({ type: 'LYRICS_SYNC', payload: item.lyrics });
-    bc.close();
+    if (onSyncSession) {
+      onSyncSession(sessionUpdate);
+    }
   };
 
   const removeFromQueue = (id: string) => {
@@ -162,9 +189,9 @@ export default function ControlPanel({
   const handleYtSubmit = () => {
     if (!ytUrl) return;
     setSession(prev => ({ ...prev, mediaUrl: ytUrl, isAudioOnly: false }));
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.postMessage({ type: 'MEDIA_SYNC', payload: { mediaType: 'mediaUrl', isYt: true, url: ytUrl } });
-    bc.close();
+    if (onSyncSession) {
+      onSyncSession({ mediaUrl: ytUrl, isYouTube: true });
+    }
   };
 
   const handleMakerCapture = React.useCallback(() => {
@@ -193,9 +220,9 @@ export default function ControlPanel({
 
   const finalizeMaker = () => {
     onParseLyrics(makerLyrics);
-    const socket = io();
-    socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: session.lyrics });
-    socket.disconnect();
+    if (onSyncSession) {
+      onSyncSession({ lyrics: session.lyrics });
+    }
     setActiveTab('config');
   };
 
@@ -218,9 +245,9 @@ export default function ControlPanel({
          import('../lib/lyricParser').then(({ parseLyrics }) => {
             const parsed = parseLyrics(content);
             onParseLyrics(content);
-            const socket = io();
-            socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: parsed });
-            socket.disconnect();
+            if (onSyncSession) {
+               onSyncSession({ lyrics: parsed });
+            }
          });
        };
        reader.readAsText(file);
@@ -228,14 +255,12 @@ export default function ControlPanel({
        const url = URL.createObjectURL(file);
        onMediaUpload(type as string, file, url);
        
-       // Binary file broadcast fallback
-       const bc = new BroadcastChannel('karaoke-sync-local');
-       bc.postMessage({ type: 'MEDIA_SYNC', payload: { mediaType: type, file } });
-       bc.close();
-       
        if (type === 'mediaUrl') {
          const { bpm, key } = await analyzeAudio(url);
          setSession(prev => ({ ...prev, mediaUrl: url, bpm, musicalKey: key }));
+         if (onSyncSession) {
+            onSyncSession({ mediaUrl: url, isYouTube: false, bpm, musicalKey: key });
+         }
        }
     }
   };
@@ -247,10 +272,9 @@ export default function ControlPanel({
   };
 
   const handleManualSync = () => {
-    const socket = io();
-    socket.emit('karaoke-sync', { type: 'SETTINGS_SYNC', payload: settings });
-    socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: session.lyrics });
-    socket.disconnect();
+    if (onSyncSession) {
+      onSyncSession({ ...session, updatedAt: new Date().toISOString() });
+    }
   };
 
   const loadSample = () => {
@@ -292,18 +316,18 @@ export default function ControlPanel({
       </div>
 
       {/* Mode Selectors */}
-      <div className="px-4 flex border-b border-white/5 scroll-x-auto">
-        {(['queue', 'search', 'config', 'maker'] as const).map(tab => (
+      <div className="px-4 flex border-b border-white/5 scroll-x-auto bg-black/20">
+        {(['queue', 'library', 'maker', 'config'] as const).map(tab => (
           <button 
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`flex-1 py-3 text-[9px] font-mono uppercase tracking-widest border-b-2 transition-all flex items-center justify-center gap-2 ${activeTab === tab ? 'border-brand-gold text-brand-gold' : 'border-transparent text-white/30'}`}
           >
             {tab === 'queue' && <ListMusic size={12} />}
-            {tab === 'search' && <Search size={12} />}
+            {tab === 'library' && <Layers size={12} />}
             {tab === 'config' && <Settings size={12} />}
             {tab === 'maker' && <Type size={12} />}
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'library' ? 'Library' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -359,151 +383,227 @@ export default function ControlPanel({
            </div>
         )}
 
-        {activeTab === 'search' && (
+        {activeTab === 'library' && (
           <div className="space-y-6">
-            {!userAuth ? (
-              <div className="p-4 bg-brand-gold/5 border border-brand-gold/10 rounded-2xl flex flex-col items-center gap-3 text-center">
-                <Chrome size={24} className="text-brand-gold" />
+            {!user ? (
+               <div className="p-8 bg-brand-gold/5 border border-brand-gold/10 rounded-2xl flex flex-col items-center gap-4 text-center">
+                <div className="w-16 h-16 bg-brand-gold/10 rounded-full flex items-center justify-center text-brand-gold animate-pulse">
+                  <Chrome size={32} />
+                </div>
                 <div>
-                  <h4 className="text-[11px] font-bold text-white mb-1">Instant YouTube Access</h4>
-                  <p className="text-[9px] text-white/40 leading-relaxed">Sign in with Google to search karaoke tracks and import playlists instantly without any manual setup.</p>
+                  <h4 className="text-sm font-bold text-white mb-2">Unified Studio Access</h4>
+                  <p className="text-[10px] text-white/40 leading-relaxed px-4">One login to rule them all. Access YouTube search, Google Drive library, and cloud synchronization instantly.</p>
                 </div>
                 <button 
                   onClick={handleGoogleLogin}
-                  className="w-full h-9 bg-brand-gold text-black text-[10px] font-bold rounded-full hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  className="w-full h-11 bg-brand-gold text-black text-xs font-black rounded-full hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-gold/10"
                 >
-                  <Chrome size={14} /> SIGN IN WITH GOOGLE
+                  <Chrome size={18} /> INITIALIZE GOOGLE CLOUD ACCESS
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-2xl">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-brand-gold/20 flex items-center justify-center text-brand-gold">
-                    <Chrome size={14} />
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-brand-gold/20 flex items-center justify-center text-brand-gold bg-black/40">
+                      {user.photoURL ? <img src={user.photoURL} alt="" /> : <Chrome size={18} />}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-white uppercase tracking-wider">{user.displayName || 'Authorized'}</p>
+                      <p className="text-[9px] font-mono text-green-500 uppercase tracking-tighter">Unified System Online</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-white uppercase tracking-wider">Authorized</p>
-                    <p className="text-[8px] font-mono text-white/30 uppercase">Direct Search Engine Ready</p>
-                  </div>
+                  <button 
+                    onClick={handleGoogleLogout}
+                    className="p-2.5 text-white/20 hover:text-red-400 hover:bg-red-400/5 rounded-full transition-all"
+                    title="Logout"
+                  >
+                    <LogOut size={16} />
+                  </button>
                 </div>
-                <button 
-                  onClick={handleGoogleLogout}
-                  className="p-2 text-white/20 hover:text-red-400 transition-colors"
-                  title="Logout"
-                >
-                  <LogOut size={14} />
-                </button>
-              </div>
-            )}
 
-            <div className="space-y-3">
-              <h3 className="input-label m-0">Unified YouTube Search</h3>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
-                  <input 
-                     type="text"
-                     placeholder="Search Artist, Song or 'Karaoke'..."
-                     value={searchQuery}
-                     onChange={(e) => setSearchQuery(e.target.value)}
-                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                     className="w-full h-10 bg-black/40 border border-white/10 rounded-full text-[11px] pl-10 pr-4 focus:outline-none focus:border-brand-gold"
-                  />
+                <div className="flex p-1 bg-black/40 rounded-xl border border-white/10">
+                  <button 
+                    onClick={() => setLibraryView('online')}
+                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${libraryView === 'online' ? 'bg-brand-gold text-black' : 'text-white/40 hover:text-white'}`}
+                  >
+                    <Search size={14} /> ONLINE
+                  </button>
+                  <button 
+                    onClick={() => { setLibraryView('cloud'); if(driveFiles.length === 0) loadDriveFiles(); }}
+                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${libraryView === 'cloud' ? 'bg-brand-gold text-black' : 'text-white/40 hover:text-white'}`}
+                  >
+                    <HardDrive size={14} /> CLOUD
+                  </button>
+                  <button 
+                    onClick={() => setLibraryView('local')}
+                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${libraryView === 'local' ? 'bg-brand-gold text-black' : 'text-white/40 hover:text-white'}`}
+                  >
+                    <MonitorPlay size={14} /> LOCAL
+                  </button>
                 </div>
-                <button 
-                   onClick={handleSearch}
-                   disabled={isSearching}
-                   className="w-10 h-10 rounded-full bg-brand-gold text-black flex items-center justify-center disabled:opacity-50"
-                >
-                  <Search size={16} />
-                </button>
-              </div>
-            </div>
 
-            {isSearching ? (
-              <div className="py-20 flex flex-col items-center gap-4">
-                <div className="w-8 h-8 border-2 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
-                <p className="text-[10px] font-mono text-white/20 uppercase tracking-widest text-center">Consulting AI for song metadata...</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {searchResults.length > 0 && (
-                   <div className="space-y-3">
-                     {searchResults.map((res) => (
-                       <motion.div 
-                         key={res.id}
-                         initial={{ opacity: 0, y: 10 }}
-                         animate={{ opacity: 1, y: 0 }}
-                         className="flex gap-3 p-3 bg-white/5 border border-white/5 rounded-xl hover:border-brand-gold/20 transition-all"
-                       >
-                         <div className="relative w-20 h-14 bg-black/40 rounded-lg overflow-hidden border border-white/5 shrink-0">
-                           <img 
-                             src={res.thumbnail} 
-                             className="w-full h-full object-cover" 
-                             referrerPolicy="no-referrer"
-                             onError={(e) => {
-                               const target = e.target as HTMLImageElement;
-                               if (target.src.includes('hqdefault.jpg')) {
-                                 target.src = `https://i.ytimg.com/vi/${res.id}/mqdefault.jpg`;
-                               } else if (target.src.includes('mqdefault.jpg')) {
-                                 target.src = `https://i.ytimg.com/vi/${res.id}/0.jpg`;
-                               } else {
-                                 // Final fallback to a generic music icon if all YT thumbnails fail
-                                 target.style.display = 'none';
-                                 const parent = target.parentElement;
-                                 if (parent) {
-                                   const icon = document.createElement('div');
-                                   icon.className = "w-full h-full flex items-center justify-center bg-white/5 text-white/20";
-                                   icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
-                                   parent.appendChild(icon);
-                                 }
-                               }
-                             }}
-                           />
-                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                           {res.isPlaylist && (
-                             <div className="absolute top-1 right-1 bg-brand-gold/90 text-black p-0.5 rounded shadow-lg">
-                               <Layers size={10} />
-                             </div>
-                           )}
-                         </div>
-                         <div className="flex-1 min-w-0 flex flex-col justify-between">
-                           <p className="text-[10px] font-bold text-white/80 line-clamp-2 leading-tight">{res.title}</p>
-                           <div className="flex gap-2">
-                             <button 
-                               onClick={() => {
-                                 setYtUrl(`https://www.youtube.com/watch?v=${res.id}`);
-                                 handleYtSubmit();
-                               }}
-                               className="text-[9px] font-bold text-brand-gold hover:underline"
-                             >
-                               LOAD NOW
-                             </button>
-                             <button 
-                               onClick={() => addToQueue(res)}
-                               className={`text-[9px] font-bold ${res.isPlaylist ? 'text-brand-gold' : 'text-white/40'} hover:text-white flex items-center gap-1`}
-                             >
-                               {res.isPlaylist ? <><Layers size={10} /> ENQUEUE PLAYLIST</> : <><Plus size={10} /> ENQUEUE</>}
-                             </button>
-                           </div>
-                         </div>
-                       </motion.div>
-                     ))}
-                   </div>
-                )}
-                {searchQuery === "" && (
-                  <div className="space-y-4">
-                    <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest block">Quick Channels</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      {['Sing King', 'KaraokeOnYT', 'Karaoke Version', 'Sunfly Karaoke'].map(target => (
+                {libraryView === 'online' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
+                          <input 
+                             type="text"
+                             placeholder="Search YouTube Karaoke..."
+                             value={searchQuery}
+                             onChange={(e) => setSearchQuery(e.target.value)}
+                             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                             className="w-full h-10 bg-black/40 border border-white/10 rounded-full text-[11px] pl-10 pr-4 focus:outline-none focus:border-brand-gold"
+                          />
+                        </div>
                         <button 
-                          key={target}
-                          onClick={() => { setSearchQuery(target + " "); handleSearch(); }}
-                          className="p-2 bg-white/5 border border-white/10 rounded-lg text-center text-[10px] text-white/40 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
+                           onClick={handleSearch}
+                           disabled={isSearching}
+                           className="w-10 h-10 rounded-full bg-brand-gold text-black flex items-center justify-center disabled:opacity-50"
                         >
-                          {target}
+                          <Search size={16} />
                         </button>
-                      ))}
+                      </div>
+                    </div>
+
+                    {isSearching ? (
+                      <div className="py-12 flex flex-col items-center gap-4">
+                        <div className="w-8 h-8 border-2 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
+                        <p className="text-[10px] font-mono text-white/20 uppercase tracking-widest text-center">Consulting AI...</p>
+                      </div>
+                    ) : searchResults.length > 0 ? (
+                      <div className="space-y-3">
+                        {searchResults.map((res) => (
+                           <motion.div 
+                             key={res.id}
+                             initial={{ opacity: 0, y: 10 }}
+                             animate={{ opacity: 1, y: 0 }}
+                             className="flex gap-3 p-3 bg-white/2 border border-white/5 rounded-xl hover:border-brand-gold/20 transition-all group"
+                           >
+                              <div className="relative w-20 h-14 bg-black/40 rounded-lg overflow-hidden border border-white/5 shrink-0">
+                                <img src={res.thumbnail} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                                {res.isPlaylist && <div className="absolute top-1 right-1 bg-brand-gold text-black p-0.5 rounded shadow-lg"><Layers size={10} /></div>}
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col justify-between">
+                                <p className="text-[10px] font-bold text-white/80 line-clamp-2 leading-tight">{res.title}</p>
+                                <div className="flex gap-2">
+                                  <button onClick={() => { setYtUrl(`https://www.youtube.com/watch?v=${res.id}`); handleYtSubmit(); }} className="text-[9px] font-bold text-brand-gold hover:underline">LOAD</button>
+                                  <button onClick={() => addToQueue(res)} className="text-[9px] font-bold text-white/40 hover:text-white flex items-center gap-1">
+                                    <Plus size={10} /> ENQUEUE
+                                  </button>
+                                </div>
+                              </div>
+                           </motion.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Sing King', 'KaraokeOnYT', 'Karaoke Version', 'Sunfly Karaoke'].map(target => (
+                          <button 
+                            key={target}
+                            onClick={() => { setSearchQuery(target + " "); handleSearch(); }}
+                            className="p-3 bg-white/5 border border-white/10 rounded-xl text-center text-[10px] text-white/40 hover:text-brand-gold hover:border-brand-gold/40 transition-all font-mono"
+                          >
+                            {target}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {libraryView === 'cloud' && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
+                        <input 
+                          type="text" 
+                          placeholder="Search GDrive..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:border-brand-gold/50 outline-none font-mono"
+                          onKeyDown={(e) => { if (e.key === 'Enter') loadDriveFiles(e.currentTarget.value); }}
+                        />
+                      </div>
+                      <button onClick={() => loadDriveFiles()} className="p-2.5 bg-white/5 border border-white/10 rounded-xl text-white/40 hover:text-brand-gold"><RotateCcw size={16} /></button>
+                    </div>
+
+                    {isDriveLoading ? (
+                      <div className="py-20 flex flex-col items-center justify-center gap-4">
+                         <div className="w-8 h-8 border-2 border-brand-gold/20 border-t-brand-gold rounded-full animate-spin" />
+                      </div>
+                    ) : driveFiles.length > 0 ? (
+                      <div className="space-y-1.5 h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        {driveFiles.map(file => (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="flex items-center gap-3 p-3 bg-white/5 border border-white/5 hover:border-brand-gold/30 rounded-xl transition-all group cursor-pointer"
+                            onClick={() => handleDriveFileSelect(file)}
+                          >
+                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${file.mimeType.startsWith('text/') ? 'bg-blue-500/10 text-blue-400' : 'bg-brand-gold/10 text-brand-gold'}`}>
+                              {file.mimeType.startsWith('text/') ? <FileText size={16} /> : <CloudDownload size={16} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold text-white/80 truncate group-hover:text-brand-gold">{file.name}</p>
+                              <p className="text-[8px] font-mono text-white/20 uppercase">{(parseInt(file.size || "0") / 1024 / 1024).toFixed(1)}MB</p>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-12 text-center opacity-20">
+                         <CloudDownload size={32} className="mx-auto mb-2" />
+                         <p className="text-[10px] font-mono uppercase">Search Drive Access...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {libraryView === 'local' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="grid grid-cols-1 gap-3">
+                       <label className="flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/20 rounded-2xl hover:border-brand-gold/50 cursor-pointer transition-all group">
+                         <div className="w-12 h-12 bg-brand-gold/10 rounded-xl flex items-center justify-center text-brand-gold group-hover:scale-110 transition-transform">
+                            <Video size={24} />
+                         </div>
+                         <div className="flex-1">
+                            <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Video / Audio</h4>
+                            <p className="text-[10px] text-white/30 font-mono">MP4, MKV, MP3, WAV...</p>
+                         </div>
+                         <input type="file" className="hidden" accept="video/*,audio/*" onChange={handleFileUpload('mediaUrl')} />
+                       </label>
+
+                       <label className="flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/20 rounded-2xl hover:border-brand-gold/50 cursor-pointer transition-all group">
+                         <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                            <FileText size={24} />
+                         </div>
+                         <div className="flex-1">
+                            <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Timed Lyrics</h4>
+                            <p className="text-[10px] text-white/30 font-mono">TXT, LRC Source...</p>
+                         </div>
+                         <input type="file" className="hidden" accept=".txt,.lrc" onChange={handleFileUpload('lyrics' as any)} />
+                       </label>
+
+                       <label className="flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/20 rounded-2xl hover:border-brand-gold/50 cursor-pointer transition-all group opacity-60">
+                         <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white/40 group-hover:scale-110 transition-transform">
+                            <ImageIcon size={24} />
+                         </div>
+                         <div className="flex-1">
+                            <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Bumper Clip</h4>
+                            <p className="text-[10px] text-white/30 font-mono">Branding Video...</p>
+                         </div>
+                         <input type="file" className="hidden" accept="video/*" onChange={handleFileUpload('bumperUrl')} />
+                       </label>
+                    </div>
+
+                    <div className="p-4 bg-brand-gold/5 border border-brand-gold/10 rounded-2xl">
+                       <p className="text-[10px] text-brand-gold/60 leading-relaxed italic text-center">
+                         Local files are loaded instantly from your device. Best for regions with limited internet or specialized performance MKVs.
+                       </p>
                     </div>
                   </div>
                 )}
@@ -511,6 +611,8 @@ export default function ControlPanel({
             )}
           </div>
         )}
+
+        {/* Removed redundant activeTab === 'drive' logic as it is merged into library */}
 
         {activeTab === 'config' && (
           <div className="space-y-8 pb-12">
@@ -662,32 +764,12 @@ export default function ControlPanel({
               />
             </section>
 
-            {/* File Configuration */}
-            <section className="space-y-4">
-              <h3 className="input-label m-0 flex items-center gap-2"><Layout size={14} /> File Discovery</h3>
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-mono text-white/60">Bumper Clip</span>
-                    <label className="h-12 border border-dashed border-white/20 rounded-lg flex items-center justify-center hover:border-brand-gold/50 cursor-pointer transition-colors">
-                      <Video size={16} className={session.bumperUrl ? 'text-brand-gold' : 'text-white/30'} />
-                      <input type="file" className="hidden" accept="video/*" onChange={handleFileUpload('bumperUrl')} />
-                    </label>
-                 </div>
-                 <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-mono text-white/60">Local Media</span>
-                    <label className="h-12 border border-dashed border-white/20 rounded-lg flex items-center justify-center hover:border-brand-gold/50 cursor-pointer transition-colors">
-                      <Music size={16} className={session.mediaUrl && !session.mediaUrl?.includes('youtube') ? 'text-brand-gold' : 'text-white/30'} />
-                      <input type="file" className="hidden" accept="video/*,audio/*" onChange={handleFileUpload('mediaUrl')} />
-                    </label>
-                 </div>
-                 <div className="col-span-2 flex flex-col gap-2">
-                    <label className="h-12 border border-dashed border-white/20 rounded-lg flex items-center justify-center hover:border-brand-gold/50 cursor-pointer px-4 gap-2">
-                      <Type size={16} className="text-white/30" />
-                      <span className="text-[10px] text-white/40">Upload Lyrics...</span>
-                      <input type="file" className="hidden" accept=".txt,.lrc" onChange={handleFileUpload('lyrics' as any)} />
-                    </label>
-                 </div>
-              </div>
+            {/* File Configuration Section (Removed redundant, merged into Library Local view) */}
+            <section className="space-y-3 opacity-50">
+               <h3 className="text-[10px] font-mono text-white/20 uppercase tracking-widest">Quick Local Fallback</h3>
+               <div className="flex gap-2">
+                 <button onClick={() => setLibraryView('local')} className="flex-1 py-2 bg-white/5 border border-white/10 rounded-lg text-[9px] uppercase font-bold hover:text-brand-gold">Access Local Library</button>
+               </div>
             </section>
 
             {/* Lyrics Designer */}

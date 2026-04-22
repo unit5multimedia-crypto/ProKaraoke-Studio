@@ -17,6 +17,12 @@ npm run dev
 npm run electron:dev
 ```
 
+**Option C: Google Drive (Cloud Library)**
+*Use this to pick your personal videos and lyrics directly from your Drive.*
+1. Go to the **Drive** tab in the Operator Desk.
+2. Click **Connect Drive** and sign in.
+3. Pick a **Text file** for lyrics or a **Video file** for the music.
+
 ---
 
 ## ☁️ 2. The Foolproof "AI + VS Code Workflow"

@@ -3,6 +3,10 @@
  */
 
 export async function analyzeAudio(url: string): Promise<{ bpm: number | null, key: string | null }> {
+  if (!url || url.startsWith('http')) {
+     // Skip remote URLs for now as they often hit CORS issues during analysis
+     return { bpm: null, key: null };
+  }
   try {
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
