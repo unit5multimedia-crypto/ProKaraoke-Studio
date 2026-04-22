@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist electron/dist",
     "lint": "tsc --noEmit",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron -r tsx/register electron/main.ts\"",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && esbuild electron/main.ts --bundle --platform=node --outfile=electron/dist/main.cjs --external:electron && electron electron/dist/main.cjs\"",
     "electron:build": "npm run build && node scripts/build-electron.js && electron-builder"
   },
   "dependencies": {
