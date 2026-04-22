@@ -1,10 +1,7 @@
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { Type } from "@google/genai";
 
 // Get API keys from Vite environment variables
-const GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 const YOUTUBE_API_KEY = (import.meta as any).env?.VITE_YOUTUBE_API_KEY || "";
-
-const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
 
 export interface SearchResult {
   id: string;
@@ -35,64 +32,7 @@ export async function searchKaraoke(query: string, accessToken?: string): Promis
     }
   }
 
-  // Fallback to Gemini if no API key or failure
-  if (!ai) {
-    console.warn("YouTube Search: No API keys configured. Search is disabled.");
-    return [];
-  }
-
-  try {
-    const prompt = `CRITICAL: Do NOT hallucinate or guess YouTube IDs. 
-    1. Use the googleSearch tool to find 5 ACTUAL karaoke or minus-one videos on YouTube for: "${query}".
-    2. Prefer videos that are likely to be embeddable (official karaoke channels like Sing King).
-    3. Only use the IDs and titles found in the search results.
-    4. Return a JSON array. Each object MUST have valid "id", "title", and "thumbnail" fields.
-    5. If no results are found via the tool, return an empty array [].`;
-
-    const result = await (ai.models.generateContent as any)({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      tools: [{ googleSearch: {} }],
-      toolConfig: { includeServerSideToolInvocations: true },
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING, description: "Actual 11-char YouTube ID or Playlist ID" },
-              title: { type: Type.STRING, description: "Accurate Video Title" },
-              thumbnail: { type: Type.STRING, description: "HTTPS thumbnail URL" }
-            },
-            required: ["id", "title", "thumbnail"]
-          }
-        }
-      }
-    });
-
-    const text = result.text || "[]";
-    let parsed: SearchResult[] = [];
-    try {
-      parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-    } catch (e) {
-      console.warn("Retrying search parsing...", e);
-      return [];
-    }
-    
-    return (Array.isArray(parsed) ? parsed : []).map(item => ({
-      ...item,
-      id: String(item.id || ""),
-      title: String(item.title || "Unknown Track"),
-      thumbnail: (item.id && (!item.thumbnail || !item.thumbnail.startsWith('http'))) 
-        ? `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` 
-        : String(item.thumbnail || "")
-    })).filter(item => item.id);
-  } catch (error) {
-    console.error("YouTube search error:", error);
-    return [];
-  }
+  return [];
 }
 
 export async function getPlaylistItems(playlistId: string, accessToken?: string): Promise<SearchResult[]> {

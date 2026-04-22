@@ -98,9 +98,6 @@ GOOGLE_CLIENT_SECRET=your_secret_here
 
 # Get from Google Cloud Cloud Console (YouTube Data API v3)
 VITE_YOUTUBE_API_KEY=your_youtube_api_key
-
-# Get from AI Studio (Settings > API Keys)
-VITE_GEMINI_API_KEY=your_gemini_api_key
 ```
 
 *Note: Frontend keys MUST start with `VITE_` to work in your browser!*
