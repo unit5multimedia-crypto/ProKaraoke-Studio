@@ -4,7 +4,6 @@ import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
 import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
-import { io } from 'socket.io-client';
 
 interface ControlPanelProps {
   settings: KaraokeSettings;
@@ -76,27 +75,16 @@ export default function ControlPanel({
   const handleGoogleLogin = async () => {
     try {
       const resp = await fetch('/api/auth/google/url');
-      if (!resp.ok) {
-        const error = await resp.json();
-        alert(`Google Sign-in not configured: ${error.error}\n\nPlease set up GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file.`);
-        return;
-      }
       const { url } = await resp.json();
       window.open(url, 'google_oauth', 'width=600,height=700');
     } catch (e) {
       console.error("Auth error:", e);
-      alert("Failed to connect to authentication service. Please check your server configuration.");
     }
   };
 
   const handleGoogleLogout = () => {
     setUserAuth(null);
     localStorage.removeItem('google_auth');
-  };
-
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const saveQueue = (newQueue: SongQueueItem[]) => {
@@ -110,17 +98,10 @@ export default function ControlPanel({
   const handleSearch = async () => {
     if (!searchQuery) return;
     setIsSearching(true);
-    setSearchResults([]);
-    try {
-      const results = await searchKaraoke(searchQuery, userAuth?.accessToken);
-      setSearchResults(results);
-    } catch (e) {
-      console.error("Search error:", e);
-      alert("Search failed. Please check your API keys are configured properly.\n\nRequired: GEMINI_API_KEY or YOUTUBE_API_KEY in .env file");
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
+    setSearchResults([]); 
+    const results = await searchKaraoke(searchQuery, userAuth?.accessToken);
+    setSearchResults(results);
+    setIsSearching(false);
   };
 
   const addToQueue = async (item: SearchResult) => {
@@ -207,6 +188,12 @@ export default function ControlPanel({
     socket.emit('karaoke-sync', { type: 'LYRICS_SYNC', payload: session.lyrics });
     socket.disconnect();
     setActiveTab('config');
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const nextLyric = (session.lyrics || []).find(l => l && l.startTime > playbackState.currentTime);
@@ -544,90 +531,9 @@ export default function ControlPanel({
                </div>
             </section>
 
-            {/* Voice Effects Controls */}
-            <section className="space-y-4">
-              <h3 className="input-label flex items-center gap-2 m-0"><Music size={14} className="text-brand-gold" /> Voice Effects</h3>
-              
-              <div className="p-4 bg-gradient-to-br from-purple-500/10 to-transparent rounded-2xl border border-purple-500/20 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full transition-colors ${settings.voiceEffects.enabled ? 'bg-green-400' : 'bg-white/20'}`}></div>
-                    <span className="text-[11px] font-bold text-white uppercase tracking-wider">Voice Effects</span>
-                  </div>
-                  <button
-                    onClick={() => updateSetting('voiceEffects', { ...settings.voiceEffects, enabled: !settings.voiceEffects.enabled })}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${settings.voiceEffects.enabled ? 'bg-purple-500' : 'bg-white/10'}`}
-                  >
-                    <div className={`w-5 h-5 bg-white rounded-full transition-transform absolute top-0.5 ${settings.voiceEffects.enabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
-                  </button>
-                </div>
-
-                {settings.voiceEffects.enabled && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="space-y-4 pt-2"
-                  >
-                    {/* Reverb Control */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider">Hall Reverb</span>
-                        <span className="text-[10px] font-mono text-purple-400">{Math.round(settings.voiceEffects.reverb * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.voiceEffects.reverb}
-                        onChange={(e) => updateSetting('voiceEffects', { ...settings.voiceEffects, reverb: parseFloat(e.target.value) })}
-                        className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer slider-purple"
-                      />
-                    </div>
-
-                    {/* Echo Control */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider">Echo Delay</span>
-                        <span className="text-[10px] font-mono text-purple-400">{Math.round(settings.voiceEffects.echo * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.voiceEffects.echo}
-                        onChange={(e) => updateSetting('voiceEffects', { ...settings.voiceEffects, echo: parseFloat(e.target.value) })}
-                        className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer slider-purple"
-                      />
-                    </div>
-
-                    {/* Volume Control */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider">Monitor Volume</span>
-                        <span className="text-[10px] font-mono text-purple-400">{Math.round(settings.voiceEffects.volume * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={settings.voiceEffects.volume}
-                        onChange={(e) => updateSetting('voiceEffects', { ...settings.voiceEffects, volume: parseFloat(e.target.value) })}
-                        className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer slider-purple"
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-            </section>
-
             {/* Production Monitors */}
             <section className="space-y-4">
               <h3 className="input-label flex items-center gap-2 m-0"><Chrome size={14} className="text-brand-gold" /> Output Manager</h3>
-              
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-2">
                   <button 
@@ -790,125 +696,53 @@ export default function ControlPanel({
 
         {activeTab === 'maker' && (
           <div className="space-y-6">
-             <div className="p-4 bg-gradient-to-br from-blue-500/10 to-transparent rounded-2xl border border-blue-500/20">
-                <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Type size={12} /> 1. Import Lyrics
-                </h4>
+             <div className="p-4 bg-brand-gold/5 rounded-xl border border-brand-gold/10">
+                <h4 className="text-[10px] font-bold text-brand-gold uppercase tracking-widest mb-2">1. Paste Raw Text</h4>
                 <textarea 
-                   placeholder="Paste lyrics line-by-line here...&#10;&#10;Example:&#10;Amazing grace how sweet the sound&#10;That saved a wretch like me&#10;I once was lost but now am found&#10;Was blind but now I see"
-                   className="w-full h-40 bg-black/40 border border-white/10 rounded-lg text-[11px] p-4 focus:outline-none focus:border-blue-400 font-mono leading-relaxed resize-none"
+                   placeholder="Paste lyrics line-by-line here..."
+                   className="w-full h-32 bg-black/40 border border-white/10 rounded-lg text-[10px] p-3 focus:outline-none focus:border-brand-gold font-mono leading-relaxed"
                    onChange={(e) => setMakerLines(e.target.value.split('\n').filter(l => l.trim()))}
                 />
-                <div className="mt-3 flex items-center justify-between text-[9px] text-white/40">
-                  <span>{makerLines.length} lines detected</span>
-                  <span>Press SPACEBAR to record timing</span>
-                </div>
              </div>
 
-             <div className="p-4 bg-gradient-to-br from-green-500/10 to-transparent rounded-2xl border border-green-500/20">
-                <h4 className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <Timer size={12} /> 2. Tap-to-Sync Recording
-                </h4>
-                <p className="text-[10px] text-white/60 italic mb-4 leading-relaxed">
-                  Start your YouTube video, then press <kbd className="bg-white/10 px-1 rounded text-[8px]">SPACEBAR</kbd> when each lyric line begins. The system will automatically capture timestamps.
-                </p>
+             <div className="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
+                <h4 className="text-[10px] font-bold text-white/80 uppercase tracking-widest mb-3">2. Capture Timing</h4>
+                <p className="text-[10px] text-white/40 italic mb-4">Click RECORD MARKER when each line starts.</p>
                 
-                {/* Recording Status */}
-                <div className="mb-4 p-3 bg-black/40 rounded-lg border border-white/5">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider">Recording Status</span>
-                    <div className={`w-2 h-2 rounded-full ${playbackState.isPlaying ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                  </div>
-                  <div className="text-[9px] text-white/40">
-                    {playbackState.isPlaying ? 
-                      `Recording active - ${makerStep}/${makerLines.length} lines captured` : 
-                      'Start YouTube playback to begin recording'
-                    }
-                  </div>
-                </div>
-                
-                {/* Progress Visualization */}
-                <div className="bg-black/40 p-3 rounded-lg border border-white/5 mb-4 max-h-40 overflow-y-auto custom-scrollbar">
-                   {makerLines.length === 0 ? (
-                     <div className="text-center py-8 text-white/20 text-[10px]">
-                       Paste lyrics above to begin
-                     </div>
-                   ) : (
-                     makerLines.map((line, i) => (
-                        <motion.div 
-                          key={i} 
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.05 }}
-                          className={`text-[11px] py-2 border-b border-white/5 last:border-0 flex items-center gap-3 ${
-                            i === makerStep ? 'text-green-400 font-bold bg-green-500/5 border-green-500/20' : 
-                            i < makerStep ? 'text-blue-400 opacity-70' : 'text-white/30'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${
-                            i < makerStep ? 'bg-blue-500 text-white' : 
-                            i === makerStep ? 'bg-green-400 text-black animate-pulse' : 'bg-white/10 text-white/30'
-                          }`}>
-                            {i < makerStep ? '✓' : i === makerStep ? '●' : i + 1}
-                          </div>
-                          <span className="flex-1">{line}</span>
-                          {i < makerStep && (
-                            <span className="text-[9px] font-mono text-blue-400/60">
-                              {formatTime(parseFloat(makerLyrics.split('\n')[i]?.match(/\[(\d+\.?\d*)-/)?.[1] || 0))}
-                            </span>
-                          )}
-                        </motion.div>
-                     ))
-                   )}
+                <div className="bg-black/40 p-3 rounded-lg border border-white/5 mb-4 max-h-32 overflow-y-auto custom-scrollbar">
+                   {makerLines.map((line, i) => (
+                      <div key={i} className={`text-[10px] py-1 border-b border-white/5 last:border-0 ${i === makerStep ? 'text-brand-gold font-bold bg-brand-gold/5' : i < makerStep ? 'text-green-500 opacity-50' : 'text-white/20'}`}>
+                         {i < makerStep ? "✓ " : i === makerStep ? "> " : "• "}{line}
+                      </div>
+                   ))}
                 </div>
 
                 <div className="flex gap-3">
                   <button 
                     disabled={makerStep >= makerLines.length || !playbackState.isPlaying}
                     onClick={handleMakerCapture}
-                    className="flex-1 py-4 bg-green-500 text-black font-bold text-sm rounded-xl shadow-lg hover:bg-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="flex-1 py-4 bg-brand-gold text-black font-bold text-xs rounded-xl shadow-lg"
                   >
-                    <Timer size={16} />
-                    {makerStep === 0 ? 'START RECORDING' : 'RECORD NEXT LINE'}
+                    RECORD MARKER
                   </button>
-                  <button 
-                    onClick={() => { setMakerStep(0); setMakerLyrics(""); }} 
-                    className="px-4 py-4 border border-white/10 flex items-center justify-center rounded-xl text-white/40 hover:text-red-400 hover:border-red-400/50 transition-colors"
-                    title="Reset recording"
-                  >
+                  <button onClick={() => { setMakerStep(0); setMakerLyrics(""); }} className="w-12 h-14 border border-white/10 flex items-center justify-center rounded-xl text-white/40">
                     <RotateCcw size={16} />
                   </button>
                 </div>
              </div>
 
              <div className="space-y-3">
-                <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest px-2 flex items-center gap-2">
-                  <Eye size={12} /> 3. Preview & Export
-                </h4>
-                <div className="p-4 h-32 bg-black/60 rounded-xl font-mono text-[10px] text-green-400/80 overflow-y-auto whitespace-pre border border-white/5">
-                   {makerLyrics || "Timing data will appear here as you record..."}
+                <h4 className="text-[10px] font-bold text-white/40 uppercase tracking-widest px-2">Preview Output</h4>
+                <div className="p-3 h-24 bg-black/60 rounded-xl font-mono text-[10px] text-brand-gold/60 overflow-y-auto whitespace-pre border border-white/5">
+                   {makerLyrics || "Timing markers will appear here..."}
                 </div>
-                <div className="flex gap-3">
-                  <button 
-                     disabled={!makerLyrics}
-                     onClick={finalizeMaker}
-                     className="flex-1 py-3 bg-blue-500 text-white font-bold text-sm rounded-xl hover:bg-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <Play size={14} />
-                     LOAD INTO KARAOKE
-                  </button>
-                  <button 
-                     disabled={!makerLyrics}
-                     onClick={() => {
-                       navigator.clipboard.writeText(makerLyrics);
-                       // Could add a toast notification here
-                     }}
-                     className="px-4 py-3 border border-white/10 text-white/60 hover:text-white hover:border-white/30 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                     title="Copy to clipboard"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
+                <button 
+                   disabled={!makerLyrics}
+                   onClick={finalizeMaker}
+                   className="w-full py-3 bg-white/5 border border-white/10 text-white font-bold text-xs rounded-xl"
+                >
+                   LOAD INTO SESSION
+                </button>
              </div>
           </div>
         )}

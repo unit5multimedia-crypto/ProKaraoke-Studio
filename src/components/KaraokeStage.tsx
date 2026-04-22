@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LyricLine, KaraokeSettings, SongQueueItem, ViewType } from '../types';
 import { usePitchDetection } from '../hooks/usePitchDetection';
 import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
-import { useVoiceEffects } from '../hooks/useVoiceEffects';
 import { VisualBackground } from './VisualBackground';
 import { Mic, Music, Play, Pause, RotateCcw, Award, Trophy, ListMusic } from 'lucide-react';
 import { io } from 'socket.io-client';
@@ -45,7 +44,6 @@ export default function KaraokeStage({
   const [isPlaying, setIsPlaying] = useState(false);
   const [score, setScore] = useState(0);
   const [currentAccuracy, setCurrentAccuracy] = useState(0); // 0 to 100 for the bar
-  const [finalScorePercentage, setFinalScorePercentage] = useState(0);
   const [pitchFeedback, setPitchFeedback] = useState<string | null>(null);
   const [timingFeedback, setTimingFeedback] = useState<string | null>(null);
   const [feedbackTimeout, setFeedbackTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -68,10 +66,6 @@ export default function KaraokeStage({
   const [ytReady, setYtReady] = useState(false);
   const pitch = usePitchDetection(phase === 'main' && isPlaying);
   const { data: fftData, initAnalyzer } = useAudioAnalyzer(isPlaying && phase === 'main');
-  const { isInitialized: voiceEffectsReady } = useVoiceEffects(
-    settings.voiceEffects.enabled && phase === 'main' && isPlaying,
-    settings.voiceEffects
-  );
 
   // Connect analyzer when media ready
   useEffect(() => {
@@ -282,7 +276,6 @@ export default function KaraokeStage({
     }
     setIsPlaying(true);
     setScore(0);
-    setFinalScorePercentage(0);
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
@@ -304,25 +297,9 @@ export default function KaraokeStage({
     setPhase('finished');
     setIsPlaying(false);
     playSFX('win');
-    
-    // Calculate final score as percentage (0-100%)
-    // Assuming a perfect score would be around 1000-2000 points for a typical song
-    // We'll normalize to 0-100% based on total possible points
-    const maxPossibleScore = lyrics.length * 10; // 10 points per lyric line for perfect performance
-    const finalScorePercentage = Math.min(100, Math.max(0, Math.round((score / Math.max(maxPossibleScore, 1)) * 100)));
-    
-    setFinalScorePercentage(finalScorePercentage);
-    
-    // Determine score message based on percentage
-    let scoreMessage = '';
-    if (finalScorePercentage >= 95) scoreMessage = 'Excellent!';
-    else if (finalScorePercentage >= 85) scoreMessage = 'Great!';
-    else if (finalScorePercentage >= 75) scoreMessage = 'Good!';
-    else if (finalScorePercentage >= 60) scoreMessage = 'Nice!';
-    else scoreMessage = 'Keep practicing!';
-    
+    const finalScore = score.toLocaleString();
     setTimeout(() => {
-      speak(`${scoreMessage} Your final score is ${finalScorePercentage} percent. To God be the glory!`);
+      speak(`Beautiful praise! Your final score is ${finalScore}. To God be the glory!`);
     }, 1000);
 
     // Auto-advance queue if not operator (operator handles it via tab sync)
@@ -337,7 +314,6 @@ export default function KaraokeStage({
     setIsPlaying(false);
     setCurrentTime(0);
     setScore(0);
-    setFinalScorePercentage(0);
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
@@ -359,7 +335,6 @@ export default function KaraokeStage({
             setPhase(payload.phase);
             setIsPlaying(true);
             setScore(0);
-            setFinalScorePercentage(0);
             break;
           case 'PAUSE':
             setIsPlaying(payload.state);
@@ -369,7 +344,6 @@ export default function KaraokeStage({
             setIsPlaying(false);
             setCurrentTime(0);
             setScore(0);
-            setFinalScorePercentage(0);
             break;
           case 'QUEUE_SYNC':
             setQueue(payload);
@@ -432,10 +406,7 @@ export default function KaraokeStage({
             iv_load_policy: 3,
             enablejsapi: 1,
             autohide: 1,
-            origin: window.location.origin,
-            // Additional privacy settings
-            showinfo: 0,
-            cc_load_policy: 0
+            origin: window.location.origin
           },
           events: {
             onReady: (event: any) => {
@@ -463,39 +434,9 @@ export default function KaraokeStage({
             onError: (event: any) => {
               console.error('YouTube Player Error:', event.data);
               let msg = "Video Error";
-              let subMsg = "Check video URL";
-              
-              switch (event.data) {
-                case 2:
-                  msg = "Invalid Video ID";
-                  subMsg = "Check the YouTube URL";
-                  break;
-                case 5:
-                  msg = "HTML5 Player Error";
-                  subMsg = "Try a different video";
-                  break;
-                case 100:
-                  msg = "Video Not Found";
-                  subMsg = "Video may be private or deleted";
-                  break;
-                case 101:
-                case 150:
-                  msg = "Embed Restricted";
-                  subMsg = "Video owner disabled embedding";
-                  break;
-                default:
-                  msg = "YouTube Error";
-                  subMsg = `Error code: ${event.data}`;
-              }
-              
-              showFeedback(msg, subMsg);
-              
-              // For sign-in required videos, show additional help
-              if (event.data === 101) {
-                setTimeout(() => {
-                  showFeedback("Try Public Video", "Use videos marked as 'Public'");
-                }, 3000);
-              }
+              if (event.data === 101 || event.data === 150) msg = "Embed Restricted";
+              if (event.data === 100) msg = "Video Not Found";
+              showFeedback("Error", msg);
             }
           }
         });
@@ -894,109 +835,22 @@ export default function KaraokeStage({
             className="z-50 text-center"
           >
             <div className="glass-panel p-12 flex flex-col items-center gap-6 border-brand-gold/20 shadow-[0_0_50px_rgba(255,215,0,0.1)]">
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.2 }}
-              >
-                <Trophy size={64} className="text-brand-gold mb-2" />
-              </motion.div>
-              
-              <motion.div
-                initial={{ y: 50, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
+              <Trophy size={64} className="text-brand-gold mb-2" />
+              <div>
                 <h2 className="text-4xl font-display font-bold text-brand-gold uppercase tracking-tighter">Performance Complete</h2>
                 <p className="text-sm text-white/60 font-mono uppercase tracking-widest mt-1 text-center">Final Score</p>
-              </motion.div>
-              
-              {/* Giant Animated Score Display */}
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 100, damping: 15, delay: 0.6 }}
-                className="relative"
-              >
-                <motion.div
-                  key={finalScorePercentage}
-                  initial={{ scale: 1.2, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, filter: 'blur(0px)' }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                  className="text-9xl font-display font-black text-white tracking-tighter relative z-10"
-                  style={{
-                    textShadow: '0 0 40px rgba(255,215,0,0.5), 0 0 80px rgba(255,215,0,0.3), 0 0 120px rgba(255,215,0,0.2)',
-                    background: 'linear-gradient(45deg, #FFD700, #FFA500, #FFD700)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
-                  }}
-                >
-                  {finalScorePercentage}<span className="text-6xl">%</span>
-                </motion.div>
-                
-                {/* Animated glow effect */}
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1.2, opacity: [0, 1, 0] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-                  className="absolute inset-0 bg-brand-gold/20 rounded-full blur-3xl -z-10"
-                />
-              </motion.div>
-              
-              {/* Score Message */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.2 }}
-                className="text-center"
-              >
-                {(() => {
-                  if (finalScorePercentage >= 95) return (
-                    <motion.div
-                      animate={{ scale: [1, 1.05, 1] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                      className="text-2xl font-display font-bold text-green-400 uppercase tracking-wider"
-                    >
-                      Excellent Performance!
-                    </motion.div>
-                  );
-                  if (finalScorePercentage >= 85) return (
-                    <div className="text-2xl font-display font-bold text-blue-400 uppercase tracking-wider">
-                      Great Job!
-                    </div>
-                  );
-                  if (finalScorePercentage >= 75) return (
-                    <div className="text-xl font-display font-bold text-yellow-400 uppercase tracking-wider">
-                      Good Singing!
-                    </div>
-                  );
-                  if (finalScorePercentage >= 60) return (
-                    <div className="text-xl font-display font-bold text-orange-400 uppercase tracking-wider">
-                      Nice Try!
-                    </div>
-                  );
-                  return (
-                    <div className="text-lg font-display font-bold text-red-400 uppercase tracking-wider">
-                      Keep Practicing!
-                    </div>
-                  );
-                })()}
-              </motion.div>
-              
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.5 }}
-                className="flex gap-4"
-              >
+              </div>
+              <div className="text-8xl font-display font-black text-white tracking-tighter">
+                {score.toLocaleString()}
+              </div>
+              <div className="flex gap-4">
                 <button
                   onClick={handleReset}
                   className="px-8 py-3 bg-brand-gold text-black font-bold rounded-full hover:scale-105 transition-transform flex items-center gap-2"
                 >
                   <RotateCcw size={18} /> TRY AGAIN
                 </button>
-              </motion.div>
+              </div>
             </div>
           </motion.div>
         )}

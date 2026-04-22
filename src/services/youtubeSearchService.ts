@@ -20,7 +20,7 @@ export async function searchKaraoke(query: string, accessToken?: string): Promis
     try {
       const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${encodeURIComponent(query + " karaoke")}&type=video,playlist&${keyOrToken}`);
       const data = await response.json();
-
+      
       if (data.items) {
         return data.items.map((item: any) => ({
           id: item.id.videoId || item.id.playlistId,
@@ -32,16 +32,6 @@ export async function searchKaraoke(query: string, accessToken?: string): Promis
     } catch (e) {
       console.error("Direct YouTube API error:", e);
     }
-  }
-
-  // Check if we have Gemini API key for fallback
-  if (!ai.apiKey) {
-    throw new Error("API key is missing. Please provide a valid GEMINI_API_KEY or YOUTUBE_API_KEY in your .env file.");
-  }
-
-  // Check if we have Gemini API key for fallback
-  if (!ai.apiKey || ai.apiKey.trim() === "") {
-    throw new Error("API key is missing. Please provide a valid GEMINI_API_KEY or YOUTUBE_API_KEY in your .env file.");
   }
 
   // Fallback to Gemini if no API key or failure

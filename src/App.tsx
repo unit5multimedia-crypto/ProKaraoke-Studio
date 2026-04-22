@@ -59,35 +59,10 @@ export default function App() {
 
     // 3. Override from URL
     const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
+    const viewParam = params.get('view') as ViewType | null;
     if (viewParam) {
-      // Map common aliases to valid view types
-      let mappedView: ViewType = 'operator'; // default
-      
-      switch (viewParam.toLowerCase()) {
-        case 'operator':
-        case 'control':
-        case 'console':
-          mappedView = 'operator';
-          break;
-        case 'prompter':
-        case 'lyrics':
-        case 'singer':
-          mappedView = 'prompter';
-          break;
-        case 'stage':
-        case 'visuals':
-        case 'visual':
-        case 'performance':
-          mappedView = 'stage';
-          break;
-        default:
-          console.warn(`Invalid view parameter: ${viewParam}. Valid options: operator, prompter, stage`);
-          mappedView = 'operator'; // fallback
-      }
-      
-      finalSettings.viewType = mappedView;
-      if (mappedView !== 'operator') setIsSidebarOpen(false);
+      finalSettings.viewType = viewParam;
+      if (viewParam !== 'operator') setIsSidebarOpen(false);
     }
 
     // 4. Update state ONCE
