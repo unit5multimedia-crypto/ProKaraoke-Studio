@@ -76,12 +76,15 @@ export default function ControlPanel({
   const handleGoogleLogin = async () => {
     try {
       const resp = await fetch('/api/auth/google/url');
+      const data = await resp.json();
+      
       if (!resp.ok) {
-        const errorData = await resp.json();
-        throw new Error(errorData.error || `Server error: ${resp.status}`);
+        throw new Error(data.error || `Server error: ${resp.status}`);
       }
-      const { url } = await resp.json();
-      window.open(url, 'google_oauth', 'width=600,height=700');
+
+      if (data.url) {
+        window.open(data.url, 'google_oauth', 'width=600,height=700');
+      }
     } catch (e) {
       console.error("Auth error:", e);
       alert(`Registration Error: ${e instanceof Error ? e.message : "Connection failed"}. \n\nTip: Ensure GOOGLE_CLIENT_ID is set in your .env file.`);
