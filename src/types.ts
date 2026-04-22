@@ -55,3 +55,13 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   visualTheme: 'vibrant_nebula',
   audioReactivity: 0.5,
 };
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      openProjection: (viewType: 'visuals' | 'prompter') => void;
+      send: (channel: string, data: any) => void;
+      receive: (channel: string, func: (...args: any[]) => void) => void;
+    };
+  }
+}

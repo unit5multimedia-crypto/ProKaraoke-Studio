@@ -1,9 +1,10 @@
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-
-// Use direct YouTube API if key is available for speed
+// Get API keys from Vite environment variables
+const GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 const YOUTUBE_API_KEY = (import.meta as any).env?.VITE_YOUTUBE_API_KEY || "";
+
+const ai = GEMINI_KEY ? new GoogleGenAI({ apiKey: GEMINI_KEY }) : null;
 
 export interface SearchResult {
   id: string;
@@ -35,6 +36,11 @@ export async function searchKaraoke(query: string, accessToken?: string): Promis
   }
 
   // Fallback to Gemini if no API key or failure
+  if (!ai) {
+    console.warn("YouTube Search: No API keys configured. Search is disabled.");
+    return [];
+  }
+
   try {
     const prompt = `CRITICAL: Do NOT hallucinate or guess YouTube IDs. 
     1. Use the googleSearch tool to find 5 ACTUAL karaoke or minus-one videos on YouTube for: "${query}".

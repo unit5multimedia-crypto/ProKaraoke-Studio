@@ -80,3 +80,27 @@ If you install **Cline** into VS Code:
 *   **Timer/Stats:** `font-mono`
 
 *(Pro tip: Use `motion/react` instead of standard CSS transitions for the buttery smooth Karaoke lyrics slide).*
+
+---
+
+## 🔑 5. API Key Configuration (For YouTube & Search)
+
+If you see **"500 Internal Server Error"** or **"API key is missing"**, you need to set up your `.env` file:
+
+1. Create a file named `.env` in the root folder (same place as `package.json`).
+2. Copy the contents of `.env.example` into it.
+3. Replace the empty values with your actual keys:
+
+```env
+# Get from Google Cloud Console (APIs & Services > Credentials)
+GOOGLE_CLIENT_ID=your_id_here.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_secret_here
+
+# Get from Google Cloud Cloud Console (YouTube Data API v3)
+VITE_YOUTUBE_API_KEY=your_youtube_api_key
+
+# Get from AI Studio (Settings > API Keys)
+VITE_GEMINI_API_KEY=your_gemini_api_key
+```
+
+*Note: Frontend keys MUST start with `VITE_` to work in your browser!*

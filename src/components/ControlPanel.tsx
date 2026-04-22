@@ -4,6 +4,7 @@ import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
 import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
+import { io } from 'socket.io-client';
 
 interface ControlPanelProps {
   settings: KaraokeSettings;
@@ -75,10 +76,15 @@ export default function ControlPanel({
   const handleGoogleLogin = async () => {
     try {
       const resp = await fetch('/api/auth/google/url');
+      if (!resp.ok) {
+        const errorData = await resp.json();
+        throw new Error(errorData.error || `Server error: ${resp.status}`);
+      }
       const { url } = await resp.json();
       window.open(url, 'google_oauth', 'width=600,height=700');
     } catch (e) {
       console.error("Auth error:", e);
+      alert(`Registration Error: ${e instanceof Error ? e.message : "Connection failed"}. \n\nTip: Ensure GOOGLE_CLIENT_ID is set in your .env file.`);
     }
   };
 
