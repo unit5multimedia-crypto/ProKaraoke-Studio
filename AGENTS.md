@@ -41,3 +41,30 @@ Follow these architectural guidelines to ensure consistency with the Lead Engine
 - **State:** Use a `buffer` to store raw text and timestamps.
 - **Workflow:** User "Taps" a key while the song plays to mark the start/end of each line.
 - **Export:** Output should be a valid `LyricLine[]` array.
+
+---
+
+## 🚀 TARGET DEADLINE: "THE SUNDAY EVENT" MILESTONE
+
+We have a strict deadline for an upcoming Sunday event. All AI Agents (Cursor, Cline, Copilot, AI Studio) reading this file **MUST PRIORITIZE STABILITY** and strictly build features in the following priority order. Do not attempt "Priority 1" (Video Output) before Sunday, as complex native dependencies breaking could ruin the event. 
+
+**Focus exclusively on the "Fun Factor" (Priorities 3, 6, and 4) to ensure the Sunday Gathering has a fully playable, classic Videoke experience.**
+
+### 🏆 IMMEDIATE PRIORITY A: The Score System (Ref: Roadmap Priority 3)
+*   **Goal:** Provide the classic "Videoke End-of-Song Scoring" experience.
+*   **Requirements:** At the end of a track, calculate a total score (0-100%). Display it using giant, animated typography (Tailwind + Motion). 
+*   **Audio Feedback:** Implement simple browser-based text-to-speech (TTS) to announce the score ("Excellent! 95!"), or use the Web Audio `OscillatorNode` for classic arcade win sounds. 
+
+### 🎤 IMMEDIATE PRIORITY B: Videoke Voice FX (Ref: Roadmap Priority 6)
+*   **Goal:** Make the singers sound like they are in a real studio/hall.
+*   **Requirements:** Connect the microphone feed (`getUserMedia`) through the Web Audio API. 
+*   **Nodes required:** `GainNode` (for volume/monitoring), `ConvolverNode` (for Reverb/Hall effect), and `DelayNode` (for Echo). Provide a simple slider in the Operator Panel to adjust Reverb intensity.
+
+### 📝 IMMEDIATE PRIORITY C: Lyric Maker Tool (Ref: Roadmap Priority 4)
+*   **Goal:** Allow the operator to rapidly prepare specific songs for the Sunday setlist.
+*   **Requirements:** Enhance the existing Lyric parser. Include a "Tap-to-sync" UI where the operator can press the Spacebar while a YouTube video plays to map timestamps automatically.
+
+### ⚠️ POST-SUNDAY FEATURE BACKLOG (Do NOT build before Sunday)
+1. **Virtual Camera / NDI Support** (Too risky for native Electron before the event).
+2. **Full Shadertoy Advanced Editor** (Too UI-heavy, stick to current visual canvas).
+3. **Complex User Accounts / Saved Highscores using Databases** (Keep it local and offline-first for now to prevent network issues during the event).
