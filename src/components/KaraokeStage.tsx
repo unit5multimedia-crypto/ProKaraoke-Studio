@@ -671,7 +671,7 @@ export default function KaraokeStage({
 
             {/* Media Player Layer */}
             {isYouTube ? (
-              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'stage' ? 'opacity-0' : 'opacity-100'}`}>
+              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
                 <div 
                   ref={ytContainerRef}
                   className="w-full h-full object-cover transition-all duration-1000 pointer-events-auto"
@@ -703,7 +703,7 @@ export default function KaraokeStage({
                   crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
-                  className={`absolute inset-0 z-20 w-full h-full object-cover pointer-events-none ${settings.viewType === 'stage' ? 'opacity-0' : 'opacity-100'}`}
+                  className={`absolute inset-0 z-20 w-full h-full object-cover pointer-events-none ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}
                 />
               )
             ) : null}
@@ -808,7 +808,7 @@ export default function KaraokeStage({
   )}
 
             {/* Lyrics Layer (Software Lyrics) */}
-            {settings.viewType !== 'stage' && (isAudioOnly || settings.viewType !== 'prompter') && (
+            {settings.viewType !== 'visuals' && (isAudioOnly || settings.viewType !== 'prompter') && (
               <div className={`absolute left-0 right-0 px-16 pointer-events-none z-40 transition-all duration-1000 ${settings.lyricsPosition === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-32'}`}>
               <div className="max-w-5xl mx-auto text-center">
                 <AnimatePresence mode="wait">
@@ -875,7 +875,7 @@ export default function KaraokeStage({
           </motion.div>
         )}
 
-        {phase === 'finished' && settings.viewType !== 'stage' && (
+        {phase === 'finished' && settings.viewType !== 'visuals' && (
           <motion.div
             key="finished"
             initial={{ scale: 0.8, opacity: 0, filter: 'blur(20px)' }}

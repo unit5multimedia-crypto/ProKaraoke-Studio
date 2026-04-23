@@ -5,7 +5,7 @@ export interface LyricLine {
   targetFrequency?: number; // Optional frequency for scoring
 }
 
-export type ViewType = 'operator' | 'prompter' | 'stage';
+export type ViewType = 'operator' | 'prompter' | 'visuals';
 
 export interface KaraokeSettings {
   fontSize: number;

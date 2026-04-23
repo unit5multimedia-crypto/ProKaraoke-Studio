@@ -161,7 +161,7 @@ export default function App() {
     const titles: Record<ViewType, string> = {
       operator: 'ProKaraoke Studio - Operator Desk',
       prompter: 'ProKaraoke Studio - Prompter View',
-      stage: 'ProKaraoke Studio - Visual View'
+      visuals: 'ProKaraoke Studio - Visual View'
     };
     document.title = titles[settings.viewType] || 'ProKaraoke Studio';
   }, [settings.viewType]);
