@@ -100,19 +100,37 @@ export default function KaraokeStage({
         osc.start();
         osc.stop(ctx.currentTime + 0.1);
       } else if (type === 'win') {
-        // Tetenent! (C-E-G-C)
-        const notes = [523.25, 659.25, 783.99, 1046.50];
-        notes.forEach((freq, i) => {
+        // Classic 8-bit Arcade Victory Fanfare
+        const melody = [
+          { freq: 392.00, time: 0, dur: 0.15 },    // G4
+          { freq: 523.25, time: 0.15, dur: 0.15 }, // C5
+          { freq: 659.25, time: 0.30, dur: 0.15 }, // E5
+          { freq: 783.99, time: 0.45, dur: 0.40 }, // G5 (longer)
+          { freq: 659.25, time: 0.85, dur: 0.15 }, // E5
+          { freq: 783.99, time: 1.00, dur: 0.80 }  // G5 (held)
+        ];
+        
+        melody.forEach(note => {
           const o = ctx.createOscillator();
           const g = ctx.createGain();
           o.connect(g);
           g.connect(ctx.destination);
-          o.type = 'triangle';
-          o.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15);
-          g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15);
-          g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.4);
-          o.start(ctx.currentTime + i * 0.15);
-          o.stop(ctx.currentTime + i * 0.15 + 0.4);
+          
+          o.type = 'square'; // 8-bit chip tune style
+          o.frequency.setValueAtTime(note.freq, ctx.currentTime + note.time);
+          
+          // Classic chip envelope (sharp attack, exponential decay)
+          g.gain.setValueAtTime(0, ctx.currentTime + note.time);
+          g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + note.time + 0.02);
+          if (note.dur > 0.2) {
+             g.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + note.time + note.dur - 0.1);
+             g.gain.linearRampToValueAtTime(0.001, ctx.currentTime + note.time + note.dur);
+          } else {
+             g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + note.time + note.dur);
+          }
+          
+          o.start(ctx.currentTime + note.time);
+          o.stop(ctx.currentTime + note.time + note.dur);
         });
       }
     } catch (e) {
