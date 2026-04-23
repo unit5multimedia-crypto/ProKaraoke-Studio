@@ -24,7 +24,12 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
         analyser.getByteFrequencyData(fftData);
       }
       
-      const { width, height } = canvas;
+      const { offsetWidth: width, offsetHeight: height } = canvas;
+      if (canvas.width !== width || canvas.height !== height) {
+         canvas.width = width;
+         canvas.height = height;
+      }
+      
       ctx.clearRect(0, 0, width, height);
 
       // Average frequency for global pulsation

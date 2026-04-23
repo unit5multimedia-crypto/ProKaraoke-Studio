@@ -659,6 +659,10 @@ export default function KaraokeStage({
               playsInline
               crossOrigin="anonymous"
               onEnded={handleBumperEnd}
+              onError={() => {
+                console.error("Bumper failed to load, skipping to main show");
+                setPhase('main');
+              }}
               className="w-full h-full object-cover"
             />
             <div className="absolute top-8 left-8 flex items-center gap-2 bg-black/50 px-4 py-2 rounded-full backdrop-blur-md">
