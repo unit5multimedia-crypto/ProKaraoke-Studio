@@ -679,30 +679,6 @@ export default function KaraokeStage({
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
                 <div className="absolute inset-0 z-[25] bg-transparent" />
-
-                {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
-                {ytReady && !isPlaying && (
-                  <div 
-                    className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
-                    onClick={() => {
-                      try {
-                        let vol = settings.mediaVolume ?? 1.0;
-                        if (!isOperator) vol = 0;
-                        ytPlayerRef.current?.setVolume(vol * 100);
-                        if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
-                        ytPlayerRef.current?.playVideo();
-                        setIsPlaying(true);
-                      } catch(e) {}
-                    }}
-                  >
-                    <div className="text-center">
-                      <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
-                        <Play size={48} fill="currentColor" className="ml-2" />
-                      </div>
-                      <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : mediaUrl ? (
               isAudioOnly ? (
@@ -899,7 +875,7 @@ export default function KaraokeStage({
           </motion.div>
         )}
 
-        {phase === 'finished' && (
+        {phase === 'finished' && settings.viewType !== 'stage' && (
           <motion.div
             key="finished"
             initial={{ scale: 0.8, opacity: 0, filter: 'blur(20px)' }}
@@ -956,23 +932,6 @@ export default function KaraokeStage({
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Autoplay Rescue Overlay (For fresh windows/OBS sources) */}
-      {!isPlaying && settings.viewType !== 'operator' && phase !== 'finished' && (
-        <div 
-          className="fixed inset-0 z-[9999] bg-black/80 flex flex-col items-center justify-center cursor-pointer group"
-          onClick={() => {
-            setIsPlaying(true);
-            playSFX('start');
-          }}
-        >
-          <div className="w-24 h-24 rounded-full bg-brand-gold/20 border border-brand-gold/40 flex items-center justify-center group-hover:scale-110 group-hover:bg-brand-gold/30 transition-all">
-            <Play size={48} className="text-brand-gold ml-2" />
-          </div>
-          <p className="text-sm font-display font-bold text-brand-gold mt-6 uppercase tracking-widest animate-pulse">Click to Activate Feed</p>
-          <p className="text-[10px] font-mono text-white/40 mt-2 uppercase">Browser Security requires interaction to start audio</p>
-        </div>
-      )}
     </div>
   );
 }
