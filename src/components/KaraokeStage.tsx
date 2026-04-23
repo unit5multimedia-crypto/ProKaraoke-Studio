@@ -83,7 +83,7 @@ export default function KaraokeStage({
     settings.micEcho ?? 0.3
   );
   
-  const { data: fftData, initAnalyzer } = useAudioAnalyzer(isPlaying && phase === 'main');
+  const { analyser: fftAnalyser, initAnalyzer } = useAudioAnalyzer(isPlaying && (phase === 'main' || phase === 'bumper'));
 
   // Handle setting audio output device
   useEffect(() => {
@@ -332,7 +332,11 @@ export default function KaraokeStage({
     }
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
+    // Force audio context rescue on start
+    const { resumeAudioContext } = await import('../lib/audioContext');
+    await resumeAudioContext();
+
     console.log('Starting show...', { bumperUrl, mediaUrl });
     playSFX('start');
     if (bumperUrl) {
@@ -677,7 +681,7 @@ export default function KaraokeStage({
                 <img src={backgroundUrl} className="w-full h-full object-cover opacity-60 blur-sm" referrerPolicy="no-referrer" />
               ) : (
                 <VisualBackground 
-                  fftData={fftData} 
+                  analyser={fftAnalyser} 
                   theme={settings.visualTheme} 
                   sensitivity={settings.audioReactivity} 
                 />

@@ -92,9 +92,9 @@ export function useVocalEngine(
 
   useEffect(() => {
      if (engineRef.current) {
-        const { micGain, echoGain, actx } = engineRef.current;
-        if (micGain) micGain.gain.setTargetAtTime(volume, actx.currentTime, 0.05);
-        if (echoGain) echoGain.gain.setTargetAtTime(echo, actx.currentTime, 0.05);
+        const { micGain, echoGain, ctx } = engineRef.current;
+        if (micGain) micGain.gain.setTargetAtTime(volume, ctx.currentTime, 0.05);
+        if (echoGain) echoGain.gain.setTargetAtTime(echo, ctx.currentTime, 0.05);
      }
   }, [volume, echo]);
 

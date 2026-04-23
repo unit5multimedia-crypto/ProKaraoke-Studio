@@ -2,15 +2,14 @@ import React, { useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
 
 interface VisualBackgroundProps {
-  fftData: Uint8Array;
+  analyser: AnalyserNode | null;
   theme: string;
   sensitivity: number;
 }
 
-export const VisualBackground: React.FC<VisualBackgroundProps> = ({ fftData, theme, sensitivity }) => {
+export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, theme, sensitivity }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Simple reactive visualizer 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -18,12 +17,17 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ fftData, the
     if (!ctx) return;
 
     let animationId: number;
+    const fftData = new Uint8Array(analyser?.frequencyBinCount || 128);
 
     const render = () => {
+      if (analyser) {
+        analyser.getByteFrequencyData(fftData);
+      }
+      
       const { width, height } = canvas;
       ctx.clearRect(0, 0, width, height);
 
-      // Average frequency for global pulsation (normalized)
+      // Average frequency for global pulsation
       const avg = fftData.reduce((acc, val) => acc + val, 0) / (fftData.length || 1);
       const pulse = (avg / 255) * sensitivity;
 
@@ -74,7 +78,7 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ fftData, the
 
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [fftData, sensitivity]);
+  }, [analyser, sensitivity]);
 
   return (
     <div className="absolute inset-0 bg-black overflow-hidden">
