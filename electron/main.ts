@@ -32,8 +32,19 @@ function createWindow() {
 
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://accounts.google.com') || url.startsWith('https://www.youtube.com')) {
-      return { action: 'allow' }; // Allow OAuth popups
+    // Firebase Auth uses the firebaseapp.com domain for its authentication proxy
+    if (url.includes('firebaseapp.com') || url.includes('accounts.google.com') || url.startsWith('https://www.youtube.com')) {
+      return { 
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 500,
+          height: 600,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true
+          }
+        }
+      }; // Allow OAuth popups
     }
     return { action: 'deny' };
   });
