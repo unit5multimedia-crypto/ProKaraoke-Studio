@@ -130,13 +130,12 @@ export default function ControlPanel({
        const url = getDriveDownloadUrl(file.id, userAuth.accessToken);
        setSession(prev => ({ 
          ...prev, 
-         mediaUrl: url, 
-         isYouTube: false,
+         mediaUrl: url,
          isAudioOnly: file.mimeType.startsWith('audio/') 
        }));
        
        if (onSyncSession) {
-         onSyncSession({ mediaUrl: url, isYouTube: false, isAudioOnly: file.mimeType.startsWith('audio/') });
+         onSyncSession({ mediaUrl: url, isAudioOnly: file.mimeType.startsWith('audio/') });
        }
        
        alert(`Media loaded from: ${file.name}`);
@@ -150,18 +149,14 @@ export default function ControlPanel({
         id: Math.random().toString(36).substr(2, 9),
         title: res.title,
         mediaUrl: `https://www.youtube.com/watch?v=${res.id}`,
-        lyrics: [],
-        isYouTube: true
-      }));
+        lyrics: [],}));
       saveQueue([...queue, ...newItems]);
     } else {
       const newItem: SongQueueItem = {
         id: Math.random().toString(36).substr(2, 9),
         title: item.title,
         mediaUrl: `https://www.youtube.com/watch?v=${item.id}`,
-        lyrics: [],
-        isYouTube: true
-      };
+        lyrics: [],};
       saveQueue([...queue, newItem]);
     }
     setActiveTab('queue');
@@ -174,7 +169,6 @@ export default function ControlPanel({
       isAudioOnly: false,
       bpm: item.bpm || null,
       musicalKey: item.musicalKey || null,
-      isYouTube: item.isYouTube,
       bumperUrl: item.bumperUrl || session.bumperUrl
     };
 
@@ -198,14 +192,12 @@ export default function ControlPanel({
     if (!ytUrl) return;
     setSession(prev => ({ 
       ...prev, 
-      mediaUrl: ytUrl, 
-      isYouTube: true,
+      mediaUrl: ytUrl,
       isAudioOnly: false 
     }));
     if (onSyncSession) {
       onSyncSession({ 
-        mediaUrl: ytUrl, 
-        isYouTube: true,
+        mediaUrl: ytUrl,
         isAudioOnly: false
       });
     }
@@ -285,17 +277,15 @@ export default function ControlPanel({
          const { bpm, key } = await analyzeAudio(url);
          setSession(prev => ({ 
            ...prev, 
-           mediaUrl: url, 
-           isYouTube: false,
-           isAudioOnly: file.mimeType.startsWith('audio/'),
+           mediaUrl: url,
+           isAudioOnly: file.type.startsWith('audio/'),
            bpm, 
            musicalKey: key 
          }));
          if (onSyncSession) {
             onSyncSession({ 
               mediaUrl: url, 
-              isYouTube: false, 
-              isAudioOnly: file.mimeType.startsWith('audio/'),
+              isAudioOnly: file.type.startsWith('audio/'),
               bpm, 
               musicalKey: key 
             });
@@ -387,20 +377,35 @@ export default function ControlPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {queue.map((item, i) => (
+                  {queue.map((item, i) => {
+                    const isPlaying = item.mediaUrl === session.mediaUrl;
+                    const isNext = !isPlaying && i > queue.findIndex(q => q.mediaUrl === session.mediaUrl);
+                    
+                    let statusColor = "bg-white/5 border-white/10 text-white/90";
+                    let statusIcon = <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-[10px] font-bold text-white/30">{i + 1}</div>;
+                    
+                    if (isPlaying) {
+                      statusColor = "bg-brand-gold/10 border-brand-gold/50 shadow-[0_0_15px_rgba(255,215,0,0.2)]";
+                      statusIcon = <div className="w-8 h-8 rounded-lg bg-brand-gold text-black flex items-center justify-center text-[10px] font-bold animate-pulse"><Play size={14} fill="currentColor" /></div>;
+                    } else if (isNext && item.status === 'downloading') {
+                      statusColor = "bg-blue-500/10 border-blue-500/30";
+                      statusIcon = <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px] font-bold animate-pulse">...</div>;
+                    }
+                    
+                    return (
                     <motion.div 
                       key={item.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="p-3 bg-white/5 border border-white/10 rounded-xl hover:border-brand-gold/30 transition-all group flex items-center gap-3"
+                      className={`p-3 border rounded-xl hover:border-brand-gold/30 transition-all group flex items-center gap-3 ${statusColor}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center text-[10px] font-bold text-white/30">
-                        {i + 1}
-                      </div>
+                      {statusIcon}
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-bold text-white/90 truncate">{item.title}</p>
+                        <p className={`text-[11px] font-bold truncate ${isPlaying ? 'text-brand-gold' : 'text-white/90'}`}>{item.title}</p>
                         <div className="flex items-center gap-2">
-                           <p className="text-[9px] font-mono text-white/30 truncate">{item.isYouTube ? 'YouTube Source' : 'Local Source'}</p>
+                           <p className="text-[9px] font-mono text-white/30 truncate">
+                             {item.status === 'downloading' ? 'DOWNLOADING...' : (item.mediaUrl.includes('google') ? 'Cloud Source' : 'Local Source')}
+                           </p>
                            {item.bumperUrl ? (
                              <span className="text-[8px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded border border-brand-gold/20 flex items-center gap-1">
                                <Video size={8} /> BUMPER
@@ -445,7 +450,7 @@ export default function ControlPanel({
                         </button>
                       </div>
                     </motion.div>
-                  ))}
+                  )})}
                 </div>
               )}
            </div>
@@ -633,17 +638,45 @@ export default function ControlPanel({
                                   <button 
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      const url = getDriveDownloadUrl(file.id, userAuth!.accessToken);
+                                      const newId = Math.random().toString(36).substr(2, 9);
+                                      const tempUrl = getDriveDownloadUrl(file.id, userAuth!.accessToken);
+                                      
                                       const newItem: SongQueueItem = {
-                                        id: Math.random().toString(36).substr(2, 9),
+                                        id: newId,
                                         title: file.name,
-                                        mediaUrl: url,
+                                        mediaUrl: tempUrl, // fallback
                                         lyrics: [],
-                                        isYouTube: false,
+                                        status: 'downloading',
                                         bumperUrl: session.bumperUrl
                                       };
-                                      saveQueue([...queue, newItem]);
+                                      
+                                      const updatedQueue = [...queue, newItem];
+                                      saveQueue(updatedQueue);
                                       setActiveTab('queue');
+                                      
+                                      // Start background download to bypass CORS / direct stream issues
+                                      fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+                                         headers: { 'Authorization': `Bearer ${userAuth!.accessToken}` }
+                                      })
+                                      .then(async res => {
+                                         if (!res.ok) throw new Error("Failed to download");
+                                         const blob = await res.blob();
+                                         const url = URL.createObjectURL(blob);
+                                         
+                                         setQueue(currentQueue => {
+                                            const newlyUpdated = currentQueue.map(q => q.id === newId ? { ...q, mediaUrl: url, status: 'ready' as any } : q);
+                                            localStorage.setItem('karaoke_queue', JSON.stringify(newlyUpdated));
+                                            return newlyUpdated;
+                                         });
+                                      })
+                                      .catch(err => {
+                                         console.error("G-Drive Download Error:", err);
+                                         setQueue(currentQueue => {
+                                            const newlyUpdated = currentQueue.map(q => q.id === newId ? { ...q, status: 'ready' as any } : q);
+                                            localStorage.setItem('karaoke_queue', JSON.stringify(newlyUpdated));
+                                            return newlyUpdated;
+                                         });
+                                      });
                                     }}
                                     className="text-[8px] font-bold text-brand-gold hover:underline"
                                   >
@@ -690,7 +723,6 @@ export default function ControlPanel({
                                             title: file.name,
                                             mediaUrl: url,
                                             lyrics: [],
-                                            isYouTube: false,
                                             bumperUrl: session.bumperUrl
                                           };
                                           saveQueue([...queue, newItem]);
@@ -776,7 +808,70 @@ export default function ControlPanel({
             {/* Production Monitors */}
             <section className="space-y-4">
               <h3 className="input-label flex items-center gap-2 m-0"><Chrome size={14} className="text-brand-gold" /> Output Manager</h3>
-              <div className="grid grid-cols-2 gap-3">
+              
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="col-span-2 space-y-2 mb-2 p-3 bg-black/40 rounded-xl border border-white/10">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40">Mic Input</label>
+                    <select
+                      value={settings.audioDeviceId || ''}
+                      onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
+                      className="w-full h-8 bg-white/5 border border-white/10 rounded overflow-hidden text-[10px] px-2 outline-none"
+                      onClick={async (e) => {
+                        const target = e.currentTarget;
+                        if (target.options.length <= 1) {
+                          try {
+                            const devices = await navigator.mediaDevices.enumerateDevices();
+                            const audioInputs = devices.filter(d => d.kind === 'audioinput');
+                            const currentVal = target.value;
+                            target.innerHTML = '<option value="">Default System Mic</option>';
+                            audioInputs.forEach(d => {
+                              const opt = document.createElement('option');
+                              opt.value = d.deviceId;
+                              opt.text = d.label || `Microphone ${d.deviceId.slice(0, 5)}...`;
+                              target.appendChild(opt);
+                            });
+                            target.value = currentVal;
+                          } catch(err) {}
+                        }
+                      }}
+                    >
+                      <option value="">Default System Mic</option>
+                      {settings.audioDeviceId && <option value={settings.audioDeviceId}>Selected Audio Input</option>}
+                    </select>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40">Playback Output</label>
+                    <select
+                      value={settings.audioOutputId || ''}
+                      onChange={(e) => updateSetting('audioOutputId', e.target.value)}
+                      className="w-full h-8 bg-white/5 border border-white/10 rounded overflow-hidden text-[10px] px-2 outline-none"
+                      onClick={async (e) => {
+                        const target = e.currentTarget;
+                        if (target.options.length <= 1) {
+                          try {
+                            const devices = await navigator.mediaDevices.enumerateDevices();
+                            const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+                            const currentVal = target.value;
+                            target.innerHTML = '<option value="">Default System Output</option>';
+                            audioOutputs.forEach(d => {
+                              const opt = document.createElement('option');
+                              opt.value = d.deviceId;
+                              opt.text = d.label || `Speaker ${d.deviceId.slice(0, 5)}...`;
+                              target.appendChild(opt);
+                            });
+                            target.value = currentVal;
+                          } catch(err) {}
+                        }
+                      }}
+                    >
+                      <option value="">Default System Output</option>
+                      {settings.audioOutputId && <option value={settings.audioOutputId}>Selected Audio Output</option>}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex flex-col gap-2">
                   <button 
                     onClick={() => {

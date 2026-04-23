@@ -19,6 +19,8 @@ export interface KaraokeSettings {
   prompterBgColor: string; // e.g., '#000000', '#00ff00' for green screen
   visualTheme: string; // shadertoy theme name
   audioReactivity: number; // sensitivity 0 to 1
+  audioDeviceId?: string;
+  audioOutputId?: string;
 }
 
 export interface SongQueueItem {
@@ -26,10 +28,10 @@ export interface SongQueueItem {
   title: string;
   mediaUrl: string;
   lyrics: LyricLine[];
-  isYouTube: boolean;
   bpm?: number | null;
   musicalKey?: string | null;
   bumperUrl?: string | null;
+  status?: 'idle' | 'downloading' | 'ready';
 }
 
 export interface KaraokeSession {

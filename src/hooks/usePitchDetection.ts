@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { detectPitch } from '../lib/pitchDetection';
 
-export function usePitchDetection(isActive: boolean) {
+export function usePitchDetection(isActive: boolean, deviceId?: string) {
   const [pitch, setPitch] = useState<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -19,7 +19,10 @@ export function usePitchDetection(isActive: boolean) {
 
     async function setupAudio() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const constraints = {
+          audio: deviceId ? { deviceId: { exact: deviceId } } : true
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
 
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -59,7 +62,7 @@ export function usePitchDetection(isActive: boolean) {
         audioContextRef.current.close();
       }
     };
-  }, [isActive]);
+  }, [isActive, deviceId]);
 
   return pitch;
 }

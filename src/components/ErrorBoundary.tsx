@@ -27,6 +27,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      // @ts-ignore
       if (this.props.fallback) return this.props.fallback;
 
       return (
@@ -51,6 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // @ts-ignore
     return this.props.children;
   }
 }

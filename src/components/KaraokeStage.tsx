@@ -64,8 +64,17 @@ export default function KaraokeStage({
   const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [ytReady, setYtReady] = useState(false);
-  const pitch = usePitchDetection(phase === 'main' && isPlaying);
+  const pitch = usePitchDetection(phase === 'main' && isPlaying, settings.audioDeviceId);
   const { data: fftData, initAnalyzer } = useAudioAnalyzer(isPlaying && phase === 'main');
+
+  // Handle setting audio output device
+  useEffect(() => {
+    if (settings.audioOutputId && mainRef.current && typeof (mainRef.current as any).setSinkId === 'function') {
+      (mainRef.current as any).setSinkId(settings.audioOutputId).catch((e: any) => {
+        console.error("Failed to set audio output device:", e);
+      });
+    }
+  }, [settings.audioOutputId, phase]);
 
   // Connect analyzer when media ready
   useEffect(() => {
@@ -138,16 +147,14 @@ export default function KaraokeStage({
     }
   };
 
-  const isYouTube = useMemo(() => {
-    return !!mediaUrl && (mediaUrl.includes('youtube.com') || mediaUrl.includes('youtu.be'));
-  }, [mediaUrl]);
+  const isYouTube = false;
 
   const youtubeId = useMemo(() => {
-    if (!isYouTube || !mediaUrl) return null;
+    if (!mediaUrl) return null;
     const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = mediaUrl.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
-  }, [isYouTube, mediaUrl]);
+  }, [mediaUrl]);
 
   // Sync playback state with refs
   useEffect(() => {
@@ -155,7 +162,7 @@ export default function KaraokeStage({
       if (phase === 'bumper') {
         bumperRef.current?.play().catch(() => {});
       } else if (phase === 'main') {
-        if (isYouTube) {
+        if (false) {
           if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
             try { ytPlayerRef.current.playVideo(); } catch (e) {}
           }
@@ -165,7 +172,7 @@ export default function KaraokeStage({
       }
     } else {
       bumperRef.current?.pause();
-      if (isYouTube) {
+      if (false) {
         if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
           try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
         }
@@ -173,7 +180,7 @@ export default function KaraokeStage({
         mainRef.current?.pause();
       }
     }
-  }, [isPlaying, phase, isYouTube, ytReady]);
+  }, [isPlaying, phase,  ytReady]);
 
   // YouTube Time Update Polyfill
   useEffect(() => {
@@ -193,7 +200,7 @@ export default function KaraokeStage({
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isYouTube, isPlaying, phase, ytReady]);
+  }, [ isPlaying, phase, ytReady]);
 
   useEffect(() => {
     if (pitch && phase === 'main' && isPlaying) {
@@ -252,7 +259,7 @@ export default function KaraokeStage({
     const roundedTime = Math.floor(currentTime);
     let duration = 0;
     
-    if (isYouTube) {
+    if (false) {
       if (ytReady && ytPlayerRef.current?.getDuration) {
         try {
           duration = ytPlayerRef.current.getDuration();
@@ -270,7 +277,7 @@ export default function KaraokeStage({
       isPlaying,
       duration: duration || 0
     });
-  }, [Math.floor(currentTime), phase, isPlaying, isYouTube, onStateUpdate, ytReady]);
+  }, [Math.floor(currentTime), phase, isPlaying,  onStateUpdate, ytReady]);
 
   const speak = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -465,7 +472,7 @@ export default function KaraokeStage({
         try { ytPlayerRef.current.destroy(); } catch(e) {}
       }
     };
-  }, [youtubeId, isYouTube, phase]);
+  }, [youtubeId,  phase]);
 
   const togglePlayback = () => {
     const newState = !isPlaying;
@@ -605,8 +612,8 @@ export default function KaraokeStage({
               ) : (
                 <VisualBackground 
                   fftData={fftData} 
-                  theme={settings.visualTheme || settings.theme} 
-                  sensitivity={settings.audioReactivity || settings.visualizerSensitivity} 
+                  theme={settings.visualTheme} 
+                  sensitivity={settings.audioReactivity} 
                 />
               )}
             </div>

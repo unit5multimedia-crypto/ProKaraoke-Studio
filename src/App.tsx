@@ -80,7 +80,6 @@ export default function App() {
           setSession(prev => ({
             ...prev,
             mediaUrl: data.mediaUrl,
-            isYouTube: data.isYouTube || false,
             isAudioOnly: data.isAudioOnly || false,
             bumperUrl: data.bumperUrl || null,
             backgroundUrl: data.backgroundUrl || null,
