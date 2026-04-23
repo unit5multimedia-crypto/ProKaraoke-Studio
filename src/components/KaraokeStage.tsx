@@ -156,8 +156,8 @@ export default function KaraokeStage({
         bumperRef.current?.play().catch(() => {});
       } else if (phase === 'main') {
         if (isYouTube) {
-          if (ytReady && ytPlayerRef.current?.playVideo) {
-            ytPlayerRef.current.playVideo();
+          if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
+            try { ytPlayerRef.current.playVideo(); } catch (e) {}
           }
         } else {
           mainRef.current?.play().catch(() => {});
@@ -166,8 +166,8 @@ export default function KaraokeStage({
     } else {
       bumperRef.current?.pause();
       if (isYouTube) {
-        if (ytReady && ytPlayerRef.current?.pauseVideo) {
-          ytPlayerRef.current.pauseVideo();
+        if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
         }
       } else {
         mainRef.current?.pause();
@@ -412,6 +412,7 @@ export default function KaraokeStage({
             enablejsapi: 1,
             autohide: 1,
             playsinline: 1,
+            vq: 'hd1080', // Force HD1080 immediately
             origin: window.location.origin
           },
           events: {
@@ -419,6 +420,7 @@ export default function KaraokeStage({
               try {
                 console.log('YouTube Player Ready');
                 setYtReady(true);
+                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080');
                 if (event.target.playVideo) event.target.playVideo();
                 if (event.target.unMute) event.target.unMute();
                 showFeedback("Vocal Engine", "Ready");
@@ -428,6 +430,7 @@ export default function KaraokeStage({
             },
             onStateChange: (event: any) => {
               if (event.data === window.YT.PlayerState.PLAYING) {
+                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080'); // Re-assert if quality drops
                 setIsPlaying(true);
               } else if (event.data === window.YT.PlayerState.PAUSED) {
                 setIsPlaying(false);
@@ -610,10 +613,10 @@ export default function KaraokeStage({
 
             {/* Media Player Layer */}
             {(isYouTube && youtubeId) ? (
-              <div className="absolute inset-0 flex items-center justify-center overflow-hidden z-20 bg-black">
+              <div className="absolute inset-0 overflow-hidden z-20 bg-black pointer-events-none">
                 <div 
                   ref={ytContainerRef}
-                  className={`w-full aspect-video transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.02]' : 'opacity-100'}`}
+                  className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.05]' : 'opacity-100'} pointer-events-auto`}
                 />
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
