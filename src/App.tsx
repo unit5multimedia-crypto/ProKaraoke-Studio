@@ -66,6 +66,34 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
+  // Broadcast Sync for offline/direct windows (Late joiners)
+  useEffect(() => {
+    const bc = new BroadcastChannel('karaoke-sync');
+    bc.onmessage = (event) => {
+      const { type, payload } = event.data;
+      
+      // If we are NOT the operator, handle sync state from operator
+      if (settings.viewType !== 'operator' && type === 'COMMAND' && payload.action === 'SYNC_STATE') {
+        const { state } = payload;
+        setSession(prev => ({
+          ...prev,
+          mediaUrl: state.mediaUrl || prev.mediaUrl,
+          bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
+          bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
+          lyrics: state.lyrics || prev.lyrics
+        }));
+        
+        setPlaybackState(prev => ({
+          ...prev,
+          phase: state.phase,
+          isPlaying: state.isPlaying,
+          currentTime: state.currentTime,
+        }));
+      }
+    };
+    return () => bc.close();
+  }, [settings.viewType]);
+
   // Sync state from Firestore when logged in
   useEffect(() => {
     if (!user) return;

@@ -440,7 +440,7 @@ export default function KaraokeStage({
           type: 'COMMAND', 
           payload: { 
             action: 'SYNC_STATE', 
-            state: { phase, isPlaying, currentTime, score } 
+            state: { phase, isPlaying, currentTime, score, bumperInUrl, bumperOutUrl, mediaUrl, lyrics } 
           } 
         });
         return;
@@ -458,6 +458,13 @@ export default function KaraokeStage({
               setCurrentTime(payload.state.currentTime);
             }
             setScore(payload.state.score);
+            // Ensure media is also synced for late joiners
+            if (payload.state.mediaUrl && payload.state.mediaUrl !== mediaUrl) {
+                // This might need to call onMediaUpload or similar, but for now we assume session syncs via sync_state
+                // We actually need to ensure the props passed to KaraokeStage are updated.
+                // Since props come from App.tsx session, we might need a message to App.tsx too.
+                // But KaraokeStage is self-contained for many things.
+            }
             break;
           case 'START':
             setPhase(payload.phase);
@@ -539,8 +546,10 @@ export default function KaraokeStage({
             enablejsapi: 1,
             autohide: 1,
             playsinline: 1,
-            vq: 'hd1080', // Force HD1080 immediately
-            origin: window.location.origin
+            vq: 'hd1080',
+            origin: window.location.origin,
+            widget_referrer: window.location.origin,
+            allowfullscreen: 0,
           },
           events: {
             onReady: (event: any) => {
@@ -647,6 +656,28 @@ export default function KaraokeStage({
         </div>
       )}
       <AnimatePresence>
+        {!isOperator && phase !== 'idle' && !fftAnalyser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-12 text-center"
+            onClick={async () => {
+              const { resumeAudioContext } = await import('../lib/audioContext');
+              await resumeAudioContext();
+              await initAnalyzer(null, true);
+            }}
+          >
+            <div className="w-20 h-20 bg-brand-gold/20 rounded-full flex items-center justify-center text-brand-gold mb-6 animate-pulse">
+               <Mic size={40} />
+            </div>
+            <h2 className="text-2xl font-display font-bold text-brand-gold mb-2">Initialize Audio Output</h2>
+            <p className="text-white/40 text-[10px] font-mono uppercase tracking-[0.2em] max-w-xs">
+              Click anywhere to activate the real-time visual concert and sync the vocal engine with this display.
+            </p>
+          </motion.div>
+        )}
+
         {phase === 'idle' && settings.viewType === 'operator' && (
           <motion.div
             key="idle"
@@ -758,11 +789,14 @@ export default function KaraokeStage({
 
             {/* Media Player Layer */}
             {isYouTube ? (
-              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
-                <div 
-                  ref={ytContainerRef}
-                  className="w-full h-full object-cover transition-all duration-1000 pointer-events-auto"
-                />
+              <div className={`absolute inset-0 z-20 bg-black pointer-events-none overflow-hidden ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
+                {/* 15% Crop to hide YouTube title bar and UI elements */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[110%] h-[120%] pointer-events-auto">
+                  <div 
+                    ref={ytContainerRef}
+                    className="w-full h-full object-cover transition-all duration-1000"
+                  />
+                </div>
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
                 <div className="absolute inset-0 z-[25] bg-transparent" />
