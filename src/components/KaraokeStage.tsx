@@ -156,14 +156,14 @@ export default function KaraokeStage({
     }
   };
 
-  const isYouTube = false;
-
   const youtubeId = useMemo(() => {
     if (!mediaUrl) return null;
     const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
     const match = mediaUrl.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   }, [mediaUrl]);
+  
+  const isYouTube = !!youtubeId;
 
   // Sync playback state with refs
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function KaraokeStage({
       if (phase === 'bumper') {
         bumperRef.current?.play().catch(() => {});
       } else if (phase === 'main') {
-        if (false) {
+        if (isYouTube) {
           if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
             try { ytPlayerRef.current.playVideo(); } catch (e) {}
           }
@@ -181,7 +181,7 @@ export default function KaraokeStage({
       }
     } else {
       bumperRef.current?.pause();
-      if (false) {
+      if (isYouTube) {
         if (ytReady && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
           try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
         }
@@ -189,7 +189,21 @@ export default function KaraokeStage({
         mainRef.current?.pause();
       }
     }
-  }, [isPlaying, phase,  ytReady]);
+  }, [isPlaying, phase,  ytReady, isYouTube]);
+
+  // Handle media volume
+  useEffect(() => {
+     let vol = settings.mediaVolume ?? 1.0;
+     // Force mute on helper windows
+     if (!isOperator) vol = 0;
+     
+     if (mainRef.current) {
+        mainRef.current.volume = vol;
+     }
+     if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === 'function') {
+        try { ytPlayerRef.current.setVolume(vol * 100); } catch(e) {}
+     }
+  }, [settings.mediaVolume, isOperator, isYouTube, ytReady, isPlaying]);
 
   // YouTube Time Update Polyfill
   useEffect(() => {
@@ -392,6 +406,113 @@ export default function KaraokeStage({
     };
   }, [settings.viewType, bumperUrl, mediaUrl]);
 
+  // YouTube iframe initialization logic
+  useEffect(() => {
+    if (!isYouTube || !youtubeId || phase !== 'main') {
+      setYtReady(false);
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.destroy(); ytPlayerRef.current = null; } catch(e) {}
+      }
+      return;
+    }
+
+    setYtReady(false);
+    let initAttempts = 0;
+    const maxAttempts = 20;
+
+    const tryInit = () => {
+      const container = ytContainerRef.current;
+      if (!container) return false;
+
+      // Ensure global YouTube API is loaded
+      if (!window.YT) {
+        if (!document.getElementById('youtube-iframe-api')) {
+          const script = document.createElement('script');
+          script.id = 'youtube-iframe-api';
+          script.src = 'https://www.youtube.com/iframe_api';
+          document.body.appendChild(script);
+        }
+        return false;
+      }
+
+      if (window.YT && window.YT.Player) {
+        if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
+          try { ytPlayerRef.current.destroy(); } catch(e) {}
+        }
+        
+        ytPlayerRef.current = new window.YT.Player(container, {
+          videoId: youtubeId,
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            modestbranding: 1,
+            rel: 0,
+            iv_load_policy: 3,
+            enablejsapi: 1,
+            autohide: 1,
+            playsinline: 1,
+            vq: 'hd1080', // Force HD1080 immediately
+            origin: window.location.origin
+          },
+          events: {
+            onReady: (event: any) => {
+              try {
+                console.log('YouTube Player Ready');
+                setYtReady(true);
+                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080');
+                
+                let vol = settings.mediaVolume ?? 1.0;
+                if (!isOperator) vol = 0;
+                event.target.setVolume(vol * 100);
+                
+                if (event.target.playVideo) event.target.playVideo();
+                if (event.target.unMute) event.target.unMute();
+                showFeedback("Vocal Engine", "Ready");
+              } catch (e) {
+                console.error("YouTube onReady error:", e);
+              }
+            },
+            onStateChange: (event: any) => {
+              if (event.data === window.YT.PlayerState.PLAYING) {
+                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080'); // Re-assert if quality drops
+                setIsPlaying(true);
+              } else if (event.data === window.YT.PlayerState.PAUSED) {
+                setIsPlaying(false);
+              } else if (event.data === window.YT.PlayerState.ENDED) {
+                handleMediaEnd();
+              }
+            },
+            onError: (event: any) => {
+              console.error('YouTube Player Error:', event.data);
+              let msg = "Video Error";
+              if (event.data === 101 || event.data === 150) msg = "Embed Restricted";
+              if (event.data === 100) msg = "Video Not Found";
+              showFeedback("Error", msg);
+            }
+          }
+        });
+        return true;
+      }
+      return false;
+    };
+
+    const interval = setInterval(() => {
+      if (tryInit() || initAttempts >= maxAttempts) {
+        clearInterval(interval);
+      }
+      initAttempts++;
+    }, 500);
+
+    return () => {
+      clearInterval(interval);
+      if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
+        try { ytPlayerRef.current.destroy(); ytPlayerRef.current = null; } catch(e) {}
+      }
+    };
+  }, [youtubeId, phase]);
+
   const togglePlayback = () => {
     const newState = !isPlaying;
     setIsPlaying(newState);
@@ -537,7 +658,41 @@ export default function KaraokeStage({
             </div>
 
             {/* Media Player Layer */}
-            {mediaUrl ? (
+            {isYouTube ? (
+              <div className="absolute inset-0 z-20 bg-black pointer-events-none">
+                <div 
+                  ref={ytContainerRef}
+                  className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.05]' : 'opacity-100'} pointer-events-auto`}
+                />
+                
+                {/* Interaction Shield - Transparent overlay for Videoke look */}
+                <div className="absolute inset-0 z-[25] bg-transparent" />
+
+                {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
+                {ytReady && !isPlaying && (
+                  <div 
+                    className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
+                    onClick={() => {
+                      try {
+                        let vol = settings.mediaVolume ?? 1.0;
+                        if (!isOperator) vol = 0;
+                        ytPlayerRef.current?.setVolume(vol * 100);
+                        if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
+                        ytPlayerRef.current?.playVideo();
+                        setIsPlaying(true);
+                      } catch(e) {}
+                    }}
+                  >
+                    <div className="text-center">
+                      <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
+                        <Play size={48} fill="currentColor" className="ml-2" />
+                      </div>
+                      <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : mediaUrl ? (
               isAudioOnly ? (
                 <audio
                   ref={mainRef as any}
@@ -560,7 +715,7 @@ export default function KaraokeStage({
                   crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
-                  className="w-full h-full object-cover pointer-events-none"
+                  className="absolute inset-0 z-20 w-full h-full object-cover pointer-events-none"
                 />
               )
             ) : null}

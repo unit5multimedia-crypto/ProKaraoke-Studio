@@ -194,10 +194,14 @@ export default function ControlPanel({
   };
 
   const loadFromQueue = (item: SongQueueItem) => {
+    // Guess isAudioOnly from title/url if missing, else default false so video plays
+    let audioOnly = false;
+    if (item.title?.toLowerCase().match(/\.(mp3|wav|ogg|m4a|aac)$/i)) audioOnly = true;
+
     const sessionUpdate = {
       mediaUrl: item.mediaUrl,
       lyrics: item.lyrics,
-      isAudioOnly: false,
+      isAudioOnly: audioOnly,
       bpm: item.bpm || null,
       musicalKey: item.musicalKey || null,
       bumperUrl: item.bumperUrl || session.bumperUrl
@@ -208,7 +212,7 @@ export default function ControlPanel({
       ...sessionUpdate
     }));
     
-    onParseLyrics(item.lyrics.map(l => `[${formatTime(l.startTime)}-${formatTime(l.endTime)}] ${l.text}`).join('\n'));
+    onParseLyrics((item.lyrics || []).map(l => `[${formatTime(l.startTime)}-${formatTime(l.endTime)}] ${l.text}`).join('\n'));
 
     if (onSyncSession) {
       onSyncSession(sessionUpdate);
@@ -306,17 +310,18 @@ export default function ControlPanel({
        
        if (type === 'mediaUrl') {
          const { bpm, key } = await analyzeAudio(url);
+         const isAudio = file.type.startsWith('audio') || (!file.type.startsWith('video') && file.type !== '');
          setSession(prev => ({ 
            ...prev, 
            mediaUrl: url,
-           isAudioOnly: file.type.startsWith('audio/'),
+           isAudioOnly: isAudio,
            bpm, 
            musicalKey: key 
          }));
          if (onSyncSession) {
             onSyncSession({ 
               mediaUrl: url, 
-              isAudioOnly: file.type.startsWith('audio/'),
+              isAudioOnly: isAudio,
               bpm, 
               musicalKey: key 
             });
@@ -928,6 +933,18 @@ export default function ControlPanel({
                       <option value="">Default System Output</option>
                       {settings.audioOutputId && <option value={settings.audioOutputId}>Selected Audio Output</option>}
                     </select>
+                  </div>
+                  
+                  <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
+                      <label className="flex justify-between text-[8px] font-mono text-white/80">
+                        <span>MEDIA MASTER VOL</span><span>{Math.round((settings.mediaVolume ?? 1.0) * 100)}%</span>
+                      </label>
+                      <input 
+                        type="range" min="0" max="1" step="0.05" 
+                        value={settings.mediaVolume ?? 1.0} 
+                        onChange={(e) => updateSetting('mediaVolume', parseFloat(e.target.value))} 
+                        className="w-full h-1 accent-white" 
+                      />
                   </div>
                 </div>
 
