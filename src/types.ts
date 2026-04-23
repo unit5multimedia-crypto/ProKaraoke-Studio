@@ -18,6 +18,7 @@ export interface KaraokeSettings {
   viewType: ViewType;
   prompterBgColor: string; // e.g., '#000000', '#00ff00' for green screen
   visualTheme: string; // shadertoy theme name
+  customGLSL?: string; // custom shader code
   audioReactivity: number; // sensitivity 0 to 1
   audioDeviceId?: string; // input mic
   audioOutputId?: string; // media output

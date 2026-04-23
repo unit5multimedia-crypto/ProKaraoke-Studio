@@ -1165,16 +1165,49 @@ export default function ControlPanel({
               </div>
             </section>
 
-            {/* Stage Visual Sensitivity */}
-            <section className="space-y-3">
+            {/* Stage Visual Sensitivity & Theme */}
+            <section className="space-y-4">
+              <div>
+                <h3 className="input-label mb-2">Visual Background Theme</h3>
+                <select
+                  value={settings.visualTheme}
+                  onChange={(e) => updateSetting('visualTheme', e.target.value)}
+                  className="w-full bg-black/60 text-white/90 border border-white/10 rounded-lg p-2 text-xs font-mono outline-none focus:border-brand-gold/50 transition-colors mb-3"
+                >
+                  <option value="nebula">Cosmic Nebula</option>
+                  <option value="neongrid">Synthwave Grid</option>
+                  <option value="goldenrays">Golden Praise</option>
+                  <option value="custom">Custom GLSL (Shadertoy)</option>
+                </select>
+
+                {settings.visualTheme === 'custom' && (
+                   <div className="space-y-2 mb-3">
+                      <div className="flex justify-between items-center">
+                         <span className="text-[10px] text-brand-gold font-mono uppercase tracking-widest bg-brand-gold/10 px-2 py-0.5 rounded">#version 300 es</span>
+                         <a href="https://www.shadertoy.com" target="_blank" rel="noreferrer" className="text-[10px] text-white/50 hover:text-white underline">Shadertoy.com</a>
+                      </div>
+                      <textarea
+                        value={settings.customGLSL || ''}
+                        onChange={(e) => updateSetting('customGLSL', e.target.value)}
+                        placeholder="void mainImage(out vec4 fragColor, in vec2 fragCoord) { ... }"
+                        className="w-full h-32 bg-black/80 border border-brand-gold/30 rounded-lg text-[10px] p-3 text-green-400 font-mono leading-relaxed focus:outline-none focus:border-brand-gold"
+                        spellCheck={false}
+                      />
+                      <p className="text-[9px] text-white/40 leading-tight">
+                         <strong className="text-white/60">Uniforms:</strong> iTime (float), iResolution (vec2), u_sensitivity (float), iChannel0 (sampler2D audio FFT).
+                      </p>
+                   </div>
+                )}
+              </div>
+
               <div className="flex justify-between items-center">
-                <h3 className="input-label m-0">Visual Reactivity</h3>
+                <h3 className="input-label m-0">Visual Reactivity (Gain)</h3>
                 <span className="text-[9px] font-mono text-brand-gold">{Math.round(settings.audioReactivity * 100)}%</span>
               </div>
               <input 
                 type="range" 
                 min="0" 
-                max="1" 
+                max="2" 
                 step="0.01" 
                 value={settings.audioReactivity} 
                 onChange={(e) => updateSetting('audioReactivity', parseFloat(e.target.value))} 

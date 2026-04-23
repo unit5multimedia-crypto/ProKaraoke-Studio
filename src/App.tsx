@@ -352,6 +352,20 @@ export default function App() {
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
     }
 
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'karaoke_settings' && e.newValue) {
+        try {
+           const parsed = JSON.parse(e.newValue);
+           setSettings(prev => ({ ...prev, ...parsed, viewType: prev.viewType }));
+        } catch(err) {
+           console.error("Failed to parse remote settings update", err);
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+
   }, []);
 
   useEffect(() => {

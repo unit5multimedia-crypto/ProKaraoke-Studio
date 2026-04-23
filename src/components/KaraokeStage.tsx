@@ -744,6 +744,7 @@ export default function KaraokeStage({
                   analyser={fftAnalyser} 
                   theme={settings.visualTheme} 
                   sensitivity={settings.audioReactivity} 
+                  customGLSL={settings.customGLSL}
                 />
               )}
             </div>
