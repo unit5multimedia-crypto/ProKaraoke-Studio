@@ -33,6 +33,8 @@ interface KaraokeStageProps {
   onMediaUpload?: (type: string, file: File, url: string) => void;
 }
 
+const karaokeSyncClient = new BroadcastChannel('karaoke-sync');
+
 export default function KaraokeStage({
   bumperInUrl,
   bumperOutUrl,
@@ -104,11 +106,12 @@ export default function KaraokeStage({
   
   const { analyser: fftAnalyser, initAnalyzer } = useAudioAnalyzer(isPlaying && (phase === 'main' || phase === 'bumper'));
 
-  // Handle setting audio output device
   useEffect(() => {
     if (settings.audioOutputId && mainRef.current && typeof (mainRef.current as any).setSinkId === 'function') {
       (mainRef.current as any).setSinkId(settings.audioOutputId).catch((e: any) => {
-        console.error("Failed to set audio output device:", e);
+        if (e.name !== 'AbortError') {
+          console.warn("Audio routing notice:", e.message);
+        }
       });
     }
   }, [settings.audioOutputId, phase]);
@@ -371,9 +374,7 @@ export default function KaraokeStage({
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperInUrl ? 'bumper' : 'main' } });
-      bc.close();
+      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperInUrl ? 'bumper' : 'main' } });
     }
   };
 
@@ -381,9 +382,7 @@ export default function KaraokeStage({
     if (phase === 'bumper') {
       setPhase('main');
       if (settings.viewType === 'operator') {
-        const bc = new BroadcastChannel('karaoke-sync');
-        bc.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'main' } });
-        bc.close();
+        karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'main' } });
       }
     } else if (phase === 'outro') {
       setPhase('finished');
@@ -403,9 +402,7 @@ export default function KaraokeStage({
     }, 1000);
     
     if (settings.viewType === 'operator') {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'FINISH' } });
-      bc.close();
+      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'FINISH' } });
     }
   };
 
@@ -413,9 +410,7 @@ export default function KaraokeStage({
     if (bumperOutUrl) {
       setPhase('outro');
       if (settings.viewType === 'operator') {
-        const bc = new BroadcastChannel('karaoke-sync');
-        bc.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'outro' } });
-        bc.close();
+        karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'outro' } });
       }
     } else {
       setPhase('finished');
@@ -433,9 +428,7 @@ export default function KaraokeStage({
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
-      bc.close();
+      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
     }
   };
 
@@ -564,9 +557,7 @@ export default function KaraokeStage({
     const newState = !isPlaying;
     setIsPlaying(newState);
     if (settings.viewType === 'operator') {
-      const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
-      bc.close();
+      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
     }
   };
 

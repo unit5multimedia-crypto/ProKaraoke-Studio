@@ -53,6 +53,8 @@ interface ControlPanelProps {
   playbackState: { currentTime: number; phase: any; isPlaying: boolean; duration: number };
 }
 
+const controlPanelSyncClient = new BroadcastChannel('karaoke-sync');
+
 export default function ControlPanel({
   user,
   userAuth,
@@ -113,9 +115,7 @@ export default function ControlPanel({
   const saveQueue = (newQueue: SongQueueItem[]) => {
     setQueue(newQueue);
     localStorage.setItem('karaoke_queue', JSON.stringify(newQueue));
-    const bc = new BroadcastChannel('karaoke-sync');
-    bc.postMessage({ type: 'QUEUE_SYNC', payload: newQueue });
-    bc.close();
+    controlPanelSyncClient.postMessage({ type: 'QUEUE_SYNC', payload: newQueue });
   };
 
   const clearQueue = () => {
@@ -352,8 +352,7 @@ export default function ControlPanel({
   const handleShutdown = () => {
     if (window.confirm("ARE YOU SURE? This will shut down the entire Praise Studio system and close all projection windows.")) {
        // 1. Signal everyone else first using a stable channel send
-       const bc = new BroadcastChannel('karaoke-sync');
-       bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+       controlPanelSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
        
        // 2. Clear local session data
        localStorage.removeItem('karaoke_queue');
@@ -369,7 +368,6 @@ export default function ControlPanel({
        
        // 4. Fallback: navigate to blank
        setTimeout(() => {
-         bc.close();
          window.location.href = 'about:blank';
        }, 200);
     }
