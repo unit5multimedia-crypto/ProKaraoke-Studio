@@ -181,7 +181,15 @@ ipcMain.on('app-exit', () => {
   app.quit();
 });
 
-app.whenReady().then(createWindow);
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+app.whenReady().then(() => {
+  const { session } = require('electron');
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(true); // Auto-approve mic/camera
+  });
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -158,9 +158,31 @@ export default function App() {
     import('./lib/syncChannel').then(({ subscribeSyncMessages }) => {
       cleanupSync = subscribeSyncMessages((data) => {
         const { type, payload } = data;
-        if (settings.viewType === 'operator') return; // Operator is master
   
         if (type === 'COMMAND') {
+          // If a projector asks for state, and we are the operator, send it IMMEDIATELY
+          if (payload.action === 'REQUEST_STATE' && settings.viewType === 'operator') {
+             import('./lib/syncChannel').then(({ sendSyncMessage }) => {
+               sendSyncMessage({ 
+                 type: 'COMMAND', 
+                 payload: { 
+                   action: 'SYNC_STATE', 
+                   state: { 
+                     ...sessionRef.current,
+                     phase: playbackStateRef.current.phase,
+                     isPlaying: playbackStateRef.current.isPlaying,
+                     currentTime: playbackStateRef.current.currentTime,
+                     duration: playbackStateRef.current.duration
+                   } 
+                 } 
+               });
+             });
+             return;
+          }
+
+          // Stop processing other commands if we are the operator
+          if (settings.viewType === 'operator') return;
+
           switch (payload.action) {
             case 'APP_EXIT':
               // Total Shutdown Hook
@@ -218,6 +240,11 @@ export default function App() {
        setSession({
           bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
           isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
+       });
+    } else {
+       // Request immediate state from the operator
+       import('./lib/syncChannel').then(({ sendSyncMessage }) => {
+          sendSyncMessage({ type: 'COMMAND', payload: { action: 'REQUEST_STATE' } });
        });
     }
 

@@ -439,9 +439,40 @@ export default function KaraokeStage({
            try { ytPlayerRef.current.seekTo(externalPlaybackState.currentTime, true); } catch(e) {}
         }
      }
-  }, [externalPlaybackState?.currentTime, ytReady, settings.viewType]);
+  }, [externalPlaybackState?.currentTime, ytReady, settings.viewType, isYouTube]);
+
+  // specialized Duplication Logic for Local Media
+  useEffect(() => {
+     if (settings.viewType !== 'operator' && !isYouTube && mainRef.current && externalPlaybackState) {
+        const timeDiff = Math.abs(mainRef.current.currentTime - externalPlaybackState.currentTime);
+        if (timeDiff > 1) {
+           mainRef.current.currentTime = externalPlaybackState.currentTime;
+        }
+        if (externalPlaybackState.isPlaying && mainRef.current.paused) {
+           mainRef.current.play().catch(e => console.error("Auto-play prevented", e));
+        } else if (!externalPlaybackState.isPlaying && !mainRef.current.paused) {
+           mainRef.current.pause();
+        }
+     }
+  }, [externalPlaybackState?.currentTime, externalPlaybackState?.isPlaying, isYouTube, settings.viewType]);
 
   // Combined cleanup of legacy sync useEffect
+
+  // Auto-initialize AudioContext for Projector Visuals without needing click
+  useEffect(() => {
+    if (!isOperator && settings.viewType === 'visuals' && phase === 'main' && !fftAnalyser) {
+      const initAudio = async () => {
+        try {
+          const { resumeAudioContext } = await import('../lib/audioContext');
+          await resumeAudioContext();
+          await initAnalyzer(null, true);
+        } catch (e) {
+          console.warn("Auto-play audio init blocked. Requires click.", e);
+        }
+      };
+      initAudio();
+    }
+  }, [isOperator, settings.viewType, phase, fftAnalyser, initAnalyzer]);
 
   // YouTube iframe initialization logic
   useEffect(() => {
@@ -472,6 +503,8 @@ export default function KaraokeStage({
         return false;
       }
 
+      const startSeconds = externalPlaybackState?.currentTime ? Math.floor(externalPlaybackState.currentTime) : 0;
+
       if (window.YT && window.YT.Player) {
         if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
           try { ytPlayerRef.current.destroy(); } catch(e) {}
@@ -491,9 +524,10 @@ export default function KaraokeStage({
             autohide: 1,
             playsinline: 1,
             vq: 'hd1080',
-            origin: window.location.origin,
-            widget_referrer: window.location.origin,
+            origin: window.location.origin === 'file://' ? 'http://localhost:3000' : window.location.origin,
+            widget_referrer: window.location.origin === 'file://' ? 'http://localhost:3000' : window.location.origin,
             allowfullscreen: 0,
+            start: startSeconds,
           },
           events: {
             onReady: (event: any) => {
@@ -716,11 +750,13 @@ export default function KaraokeStage({
 
             {/* Media Player Layer */}
             {isYouTube ? (
-              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
-                <div 
-                  ref={ytContainerRef}
-                  className="w-full h-full object-cover transition-all duration-1000 pointer-events-auto"
-                />
+              <div className={`absolute inset-0 z-20 bg-black pointer-events-none overflow-hidden ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
+                <div className="absolute inset-[-10%] z-20 pointer-events-auto">
+                   <div 
+                     ref={ytContainerRef}
+                     className="w-full h-full object-cover transition-all duration-1000"
+                   />
+                </div>
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
                 <div className="absolute inset-0 z-[25] bg-transparent" />
