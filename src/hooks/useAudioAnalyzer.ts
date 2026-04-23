@@ -10,6 +10,12 @@ export function useAudioAnalyzer(isActive: boolean) {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
+  useEffect(() => {
+    if (!isActive) {
+       // Optionally stop mic here if needed, but we keep it for now
+    }
+  }, [isActive]);
+
   const initAnalyzer = async (element: HTMLMediaElement | null, enableMic: boolean = true) => {
     if (!element && !enableMic) return;
     

@@ -70,19 +70,20 @@ export default function App() {
   useEffect(() => {
     const bc = new BroadcastChannel('karaoke-sync');
 
+    // HEARTBEAT SYNC & EXIT SAFETY
     // Standard way to trigger browser exit confirmation
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (settings.viewType === 'operator') {
-        const msg = "Are you sure you want to exit? All projection windows will be closed.";
-        // Signal others to clean up immediately before browser kills process
-        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        // Signal others to clean up immediately using a fresh channel to avoid closure race
+        const exitBc = new BroadcastChannel('karaoke-sync');
+        exitBc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        exitBc.close();
         
         e.preventDefault();
-        e.returnValue = msg; 
-        return msg;
+        e.returnValue = ''; 
+        return '';
       }
     };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     bc.onmessage = (event) => {
@@ -91,28 +92,27 @@ export default function App() {
       // If we are NOT the operator, handle sync state from operator
       if (settings.viewType !== 'operator' && type === 'COMMAND') {
         if (payload.action === 'APP_EXIT') {
-          // Attempt to close helper windows on operator exit
+          // Total Studio Shutdown signal
           window.close();
-          // Fallback if window.close is blocked
+          // Fallback refresh to clear memory/resources if close is blocked
           setTimeout(() => {
-             setPlaybackState(prev => ({ ...prev, phase: 'idle', isPlaying: false }));
+             setSession({
+                bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
+                isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
+             });
+             setPlaybackState({ currentTime: 0, phase: 'idle', isPlaying: false, duration: 0 });
              window.location.reload(); 
-          }, 100);
+          }, 200);
           return;
         }
 
         if (payload.action === 'SYNC_STATE') {
           const { state } = payload;
           
-          // Duplicate session content
+          // Force duplication of EVERYTHING from operator for "mirrored" experience
           setSession(prev => {
-            const hasChanged = 
-              state.mediaUrl !== prev.mediaUrl || 
-              state.bumperInUrl !== prev.bumperInUrl ||
-              state.bumperOutUrl !== prev.bumperOutUrl ||
-              (state.lyrics && state.lyrics.length !== prev.lyrics.length);
-              
-            if (!hasChanged) return prev;
+            const mediaChanged = state.mediaUrl !== prev.mediaUrl || state.lyrics.length !== prev.lyrics.length;
+            if (!mediaChanged) return prev;
 
             return {
               ...prev,
@@ -128,16 +128,19 @@ export default function App() {
           
           setPlaybackState(prev => {
              const timeDiff = Math.abs(prev.currentTime - state.currentTime);
-             const shouldSyncTime = timeDiff > 3; // Trigger re-sync if drifted
+             const shouldSyncTime = timeDiff > 2; // Reduced threshold for tighter sync
              
-             if (prev.phase === state.phase && prev.isPlaying === state.isPlaying && !shouldSyncTime) return prev;
-             
-             return {
-                ...prev,
-                phase: state.phase,
-                isPlaying: state.isPlaying,
-                currentTime: state.currentTime,
-             };
+             // If phase or isPlaying status changed, update immediately
+             if (prev.phase !== state.phase || prev.isPlaying !== state.isPlaying || shouldSyncTime) {
+                return {
+                    ...prev,
+                    phase: state.phase,
+                    isPlaying: state.isPlaying,
+                    currentTime: state.currentTime,
+                    duration: state.duration || prev.duration
+                };
+             }
+             return prev;
           });
         }
       }
@@ -188,7 +191,7 @@ export default function App() {
           } 
         } 
       });
-    }, 3000);
+    }, 1000); // 1s frequency for perfect duplicating
 
     return () => {
       clearInterval(interval);

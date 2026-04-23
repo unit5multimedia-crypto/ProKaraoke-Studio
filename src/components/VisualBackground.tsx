@@ -17,32 +17,36 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
     if (!ctx) return;
 
     let animationId: number;
-    const fftData = new Uint8Array(analyser?.frequencyBinCount || 128);
+    const fftData = new Uint8Array(analyser ? analyser.frequencyBinCount : 128);
 
     const render = () => {
-      if (analyser) {
-        analyser.getByteFrequencyData(fftData);
-      }
-      
       const { offsetWidth: width, offsetHeight: height } = canvas;
       if (canvas.width !== width || canvas.height !== height) {
          canvas.width = width;
          canvas.height = height;
       }
+
+      if (analyser) {
+        analyser.getByteFrequencyData(fftData);
+      } else {
+        fftData.fill(0);
+      }
       
-      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#010101';
+      ctx.fillRect(0, 0, width, height);
 
       // Average frequency for global pulsation
-      const avg = fftData.reduce((acc, val) => acc + val, 0) / (fftData.length || 1);
+      const sum = fftData.reduce((acc, val) => acc + val, 0);
+      const avg = sum / (fftData.length || 1);
       const pulse = (avg / 255) * sensitivity;
 
       // Draw background nebula glow
       const grad = ctx.createRadialGradient(
         width / 2, height / 2, 0,
-        width / 2, height / 2, width * (0.8 + pulse)
+        width / 2, height / 2, width * (0.6 + pulse)
       );
-      grad.addColorStop(0, `rgba(255, 215, 0, ${0.1 + pulse})`); // Brand Gold
-      grad.addColorStop(0.5, `rgba(184, 134, 11, ${0.05 + pulse * 0.5})`); // Darker gold
+      grad.addColorStop(0, `rgba(255, 215, 0, ${0.15 + pulse * 0.5})`); // Brand Gold
+      grad.addColorStop(0.5, `rgba(184, 134, 11, ${0.05 + pulse * 0.2})`); // Darker gold
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       
       ctx.fillStyle = grad;
@@ -51,27 +55,26 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
       // Multi-layered reactive circles
       const circleCount = 3;
       for (let j = 0; j < circleCount; j++) {
-        const offset = (j + 1) * 0.1;
-        const radius = (width * 0.2) + (avg * (j + 1) * sensitivity * 0.5);
+        const radius = (Math.min(width, height) * 0.2) + (avg * (j + 1) * sensitivity * 0.8);
         ctx.beginPath();
         ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 215, 0, ${0.2 - j * 0.05})`;
-        ctx.lineWidth = 1 + pulse * 10;
+        ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 - j * 0.08 + pulse})`;
+        ctx.lineWidth = 1 + pulse * 15;
         ctx.stroke();
       }
 
-      // Smooth Bottom visualization
-      const barCount = 128;
+      // Dynamic Bottom Bars
+      const barCount = 64;
       const barWidth = width / barCount;
       const step = Math.floor(fftData.length / barCount);
 
       for (let i = 0; i < barCount; i++) {
         const val = fftData[i * step] || 0;
-        const barHeight = (val / 255) * height * 0.4 * sensitivity;
+        const normalizedVal = val / 255;
+        const barHeight = normalizedVal * height * 0.5 * sensitivity;
         
-        // Gradient for bars
         const barGrad = ctx.createLinearGradient(0, height, 0, height - barHeight);
-        barGrad.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+        barGrad.addColorStop(0, `rgba(255, 215, 0, ${0.4 + normalizedVal * 0.6})`);
         barGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
 
         ctx.fillStyle = barGrad;

@@ -349,6 +349,28 @@ export default function ControlPanel({
     }
   };
 
+  const handleShutdown = () => {
+    if (window.confirm("ARE YOU SURE? This will shut down the entire Praise Studio system and close all projection windows.")) {
+       // 1. Signal everyone else first
+       const exitBc = new BroadcastChannel('karaoke-sync');
+       exitBc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+       exitBc.close();
+       
+       // 2. Clear local session data
+       localStorage.removeItem('karaoke_queue');
+       
+       // 3. Attempt to close this window
+       try {
+         window.close();
+       } catch (e) {}
+       
+       // 4. Fallback: navigate to blank or reload to idle
+       setTimeout(() => {
+         window.location.href = 'about:blank';
+       }, 500);
+    }
+  };
+
   const loadSample = () => {
     onParseLyrics("[00:00.00-00:05.00] Welcome to ProKaraoke Studio\n[00:05.00-00:10.00] Ready for Sunday Event?\n[00:10.00-00:15.00] Let the music play!");
     setSession(prev => ({ ...prev, bpm: 128, musicalKey: 'C Major' }));
@@ -370,6 +392,16 @@ export default function ControlPanel({
           </div>
         </div>
         <div className="flex gap-2">
+          {user && (
+            <button 
+              onClick={handleShutdown}
+              className="w-8 h-8 rounded border border-red-500/20 bg-red-500/5 flex items-center justify-center text-red-500/40 hover:text-red-400 hover:border-red-400 hover:bg-red-400/10 transition-all group relative"
+              title="SYSTEM SHUTDOWN // CLOSE ALL WINDOWS"
+            >
+              <LogOut size={14} />
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-brand-dark" />
+            </button>
+          )}
           <button 
             onClick={loadSample}
             className="w-8 h-8 rounded border border-white/10 flex items-center justify-center text-white/20 hover:text-brand-gold hover:border-brand-gold/50 transition-colors"
