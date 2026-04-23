@@ -351,23 +351,27 @@ export default function ControlPanel({
 
   const handleShutdown = () => {
     if (window.confirm("ARE YOU SURE? This will shut down the entire Praise Studio system and close all projection windows.")) {
-       // 1. Signal everyone else first
+       // 1. Signal everyone else first using a stable channel send
        const exitBc = new BroadcastChannel('karaoke-sync');
        exitBc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
-       exitBc.close();
        
        // 2. Clear local session data
        localStorage.removeItem('karaoke_queue');
        
        // 3. Attempt to close this window
+       if (window.electronAPI) {
+          try { (window as any).close(); } catch(e) {}
+       }
+       
        try {
          window.close();
        } catch (e) {}
        
        // 4. Fallback: navigate to blank or reload to idle
        setTimeout(() => {
+         exitBc.close();
          window.location.href = 'about:blank';
-       }, 500);
+       }, 300);
     }
   };
 

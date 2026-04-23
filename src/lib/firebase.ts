@@ -13,6 +13,8 @@ provider.addScope('https://www.googleapis.com/auth/drive.readonly');
 
 export const signInWithGoogle = async () => {
   try {
+    // Note: In COOP restricted environments, signInWithPopup can throw policy errors or hang.
+    // We attempt it, but catch the specific closure error to provide a better UX.
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
@@ -30,8 +32,14 @@ export const signInWithGoogle = async () => {
     }
     
     return { user: result.user, accessToken };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Auth Error:", error);
+    if (error.code === 'auth/popup-closed-by-user') {
+       throw new Error("Login cancelled or blocked by browser. Please allow popups.");
+    }
+    if (error.message?.includes('Cross-Origin-Opener-Policy')) {
+       throw new Error("Security Policy Error: Your browser is blocking the login window. Try opening the app in a new tab.");
+    }
     throw error;
   }
 };

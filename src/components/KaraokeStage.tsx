@@ -23,6 +23,12 @@ interface KaraokeStageProps {
   settings: KaraokeSettings;
   bpm: number | null;
   musicalKey: string | null;
+  // Mirrored playback state from Operator
+  externalPlaybackState?: {
+     currentTime: number;
+     phase: 'idle' | 'bumper' | 'main' | 'outro' | 'finished';
+     isPlaying: boolean;
+  };
   onStateUpdate?: (state: { currentTime: number; phase: any; isPlaying: boolean; duration: number }) => void;
   onMediaUpload?: (type: string, file: File, url: string) => void;
 }
@@ -37,12 +43,23 @@ export default function KaraokeStage({
   settings,
   bpm,
   musicalKey,
+  externalPlaybackState,
   onStateUpdate,
   onMediaUpload,
 }: KaraokeStageProps) {
-  const [phase, setPhase] = useState<'idle' | 'bumper' | 'main' | 'outro' | 'finished'>('idle');
-  const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [localPhase, setLocalPhase] = useState<'idle' | 'bumper' | 'main' | 'outro' | 'finished'>('idle');
+  const [localTime, setLocalTime] = useState(0);
+  const [localIsPlaying, setLocalIsPlaying] = useState(false);
+
+  // Sync from props if duplicated, otherwise use local state
+  const phase = externalPlaybackState?.phase ?? localPhase;
+  const currentTime = externalPlaybackState?.currentTime ?? localTime;
+  const isPlaying = externalPlaybackState?.isPlaying ?? localIsPlaying;
+
+  // Helper setters that respect the source of truth
+  const setPhase = (p: any) => settings.viewType === 'operator' ? setLocalPhase(p) : null;
+  const setCurrentTime = (t: number) => settings.viewType === 'operator' ? setLocalTime(t) : null;
+  const setIsPlaying = (p: boolean) => settings.viewType === 'operator' ? setLocalIsPlaying(p) : null;
   const [score, setScore] = useState(0);
   const [currentAccuracy, setCurrentAccuracy] = useState(0); // 0 to 100 for the bar
   const [pitchFeedback, setPitchFeedback] = useState<string | null>(null);
@@ -422,95 +439,17 @@ export default function KaraokeStage({
     }
   };
 
+  // specialized Duplication Logic for YouTube
   useEffect(() => {
-    // Session State Sync logic
-    const bc = new BroadcastChannel('karaoke-sync');
-
-    // If we are a helper window, request current state immediately
-    if (settings.viewType !== 'operator') {
-      bc.postMessage({ type: 'SYNC_REQUEST' });
-    }
-
-    bc.onmessage = (event) => {
-      const { type, payload } = event.data;
-      
-      // Operator responds to late-join sync requests
-      if (type === 'SYNC_REQUEST' && settings.viewType === 'operator') {
-        bc.postMessage({ 
-          type: 'COMMAND', 
-          payload: { 
-            action: 'SYNC_STATE', 
-            state: { 
-              phase, 
-              isPlaying, 
-              currentTime, 
-              score, 
-              bumperInUrl, 
-              bumperOutUrl, 
-              mediaUrl, 
-              lyrics,
-              bpm,
-              musicalKey,
-              isAudioOnly
-            } 
-          } 
-        });
-        return;
-      }
-
-      if (settings.viewType === 'operator') return;
-      
-      if (type === 'COMMAND') {
-        switch (payload.action) {
-          case 'SYNC_STATE':
-            // Update local state from operator
-            if (payload.state.phase !== phase) setPhase(payload.state.phase);
-            if (payload.state.isPlaying !== isPlaying) setIsPlaying(payload.state.isPlaying);
-            if (payload.state.score !== score) setScore(payload.state.score);
-            
-            // Sync time if significantly different
-            const timeDiff = Math.abs(payload.state.currentTime - currentTime);
-            if (timeDiff > 3) {
-              setCurrentTime(payload.state.currentTime);
-              
-              // If YouTube is active, force a seek to match operator exactly
-              if (isYouTube && ytReady && ytPlayerRef.current) {
-                 try { ytPlayerRef.current.seekTo(payload.state.currentTime, true); } catch(e) {}
-              }
-            }
-            break;
-          case 'START':
-            setPhase(payload.phase);
-            setIsPlaying(true);
-            setScore(0);
-            break;
-          case 'PHASE_CHANGE':
-            setPhase(payload.phase);
-            break;
-          case 'FINISH':
-            setPhase('finished');
-            setIsPlaying(false);
-            break;
-          case 'PAUSE':
-            setIsPlaying(payload.state);
-            break;
-          case 'RESET':
-            setPhase('idle');
-            setIsPlaying(false);
-            setCurrentTime(0);
-            setScore(0);
-            break;
-          case 'QUEUE_SYNC':
-            setQueue(payload);
-            break;
+     if (settings.viewType !== 'operator' && isYouTube && ytReady && ytPlayerRef.current && externalPlaybackState) {
+        const timeDiff = Math.abs(ytPlayerRef.current.getCurrentTime() - externalPlaybackState.currentTime);
+        if (timeDiff > 2) {
+           try { ytPlayerRef.current.seekTo(externalPlaybackState.currentTime, true); } catch(e) {}
         }
-      }
-    };
+     }
+  }, [externalPlaybackState?.currentTime, ytReady, settings.viewType]);
 
-    return () => {
-      bc.close();
-    };
-  }, [settings.viewType, phase, isPlaying, currentTime, score, isYouTube, ytReady]);
+  // Combined cleanup of legacy sync useEffect
 
   // YouTube iframe initialization logic
   useEffect(() => {

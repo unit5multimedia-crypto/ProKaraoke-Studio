@@ -48,12 +48,18 @@ export default function App() {
     currentTime: 0,
     phase: 'idle',
     isPlaying: false,
-    duration: 0
+    duration: 0,
+    score: 0
   });
 
   const sessionRef = useRef(session);
   const settingsRef = useRef(settings);
+  const playbackStateRef = useRef(playbackState);
   const mediaFilesRef = useRef<Record<string, File>>({});
+
+  useEffect(() => { playbackStateRef.current = playbackState; }, [playbackState]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
 
   useEffect(() => {
     validateConnection();
@@ -66,138 +72,113 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // Broadcast Sync for offline/direct windows (Late joiners)
+  // Unified BroadcastChannel and Exit Safety
   useEffect(() => {
     const bc = new BroadcastChannel('karaoke-sync');
 
-    // HEARTBEAT SYNC & EXIT SAFETY
-    // Standard way to trigger browser exit confirmation
+    // Heartbeat mechanism (Operator Only)
+    let heartbeatInterval: NodeJS.Timeout | null = null;
+    if (settings.viewType === 'operator') {
+      heartbeatInterval = setInterval(() => {
+        // Sync vital states to all duplicators
+        bc.postMessage({ 
+          type: 'COMMAND', 
+          payload: { 
+            action: 'SYNC_STATE', 
+            state: { 
+              ...sessionRef.current,
+              phase: playbackStateRef.current.phase,
+              isPlaying: playbackStateRef.current.isPlaying,
+              currentTime: playbackStateRef.current.currentTime,
+              duration: playbackStateRef.current.duration
+            } 
+          } 
+        });
+      }, 1000);
+    }
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (settings.viewType === 'operator') {
-        // Signal others to clean up immediately using a fresh channel to avoid closure race
-        const exitBc = new BroadcastChannel('karaoke-sync');
-        exitBc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
-        exitBc.close();
+        // Signal immediate shutdown to others
+        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
         
+        const msg = "Are you sure? This will terminate the Praise session.";
         e.preventDefault();
-        e.returnValue = ''; 
-        return '';
+        e.returnValue = msg; 
+        return msg;
       }
     };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     bc.onmessage = (event) => {
       const { type, payload } = event.data;
-      
-      // If we are NOT the operator, handle sync state from operator
-      if (settings.viewType !== 'operator' && type === 'COMMAND') {
-        if (payload.action === 'APP_EXIT') {
-          // Total Studio Shutdown signal
-          window.close();
-          // Fallback refresh to clear memory/resources if close is blocked
-          setTimeout(() => {
-             setSession({
-                bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
-                isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
-             });
-             setPlaybackState({ currentTime: 0, phase: 'idle', isPlaying: false, duration: 0 });
-             window.location.reload(); 
-          }, 200);
-          return;
-        }
+      if (settings.viewType === 'operator') return; // Operator is master
 
-        if (payload.action === 'SYNC_STATE') {
-          const { state } = payload;
-          
-          // Force duplication of EVERYTHING from operator for "mirrored" experience
-          setSession(prev => {
-            const mediaChanged = state.mediaUrl !== prev.mediaUrl || state.lyrics.length !== prev.lyrics.length;
-            if (!mediaChanged) return prev;
+      if (type === 'COMMAND') {
+        switch (payload.action) {
+          case 'APP_EXIT':
+            // Total Shutdown Hook
+            if (window.electronAPI) {
+              // Reliably close in desktop environment if possible
+              try { (window as any).close(); } catch(e) {}
+            }
+            window.close();
+            // Fallback for browser tabs: clear and reload to idle
+            setSession({
+               bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
+               isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
+            });
+            window.location.reload();
+            break;
 
-            return {
-              ...prev,
-              mediaUrl: state.mediaUrl,
-              bumperInUrl: state.bumperInUrl,
-              bumperOutUrl: state.bumperOutUrl,
-              lyrics: state.lyrics,
-              bpm: state.bpm,
-              musicalKey: state.musicalKey,
-              isAudioOnly: state.isAudioOnly
-            };
-          });
-          
-          setPlaybackState(prev => {
-             const timeDiff = Math.abs(prev.currentTime - state.currentTime);
-             const shouldSyncTime = timeDiff > 2; // Reduced threshold for tighter sync
-             
-             // If phase or isPlaying status changed, update immediately
-             if (prev.phase !== state.phase || prev.isPlaying !== state.isPlaying || shouldSyncTime) {
-                return {
-                    ...prev,
-                    phase: state.phase,
-                    isPlaying: state.isPlaying,
-                    currentTime: state.currentTime,
-                    duration: state.duration || prev.duration
-                };
+          case 'SYNC_STATE':
+            const { state } = payload;
+            // Immediate mirroring for Prompter/Visuals
+            setSession(prev => {
+              const hasActualChange = state.mediaUrl !== prev.mediaUrl || state.lyrics.length !== prev.lyrics.length;
+              if (!hasActualChange) return prev;
+              return { ...prev, ...state };
+            });
+
+            setPlaybackState(prev => {
+               const dt = Math.abs(prev.currentTime - state.currentTime);
+               // Force sync if drifts or if state changed (Play/Pause)
+               if (prev.isPlaying !== state.isPlaying || prev.phase !== state.phase || dt > 2) {
+                 return { ...prev, ...state };
+               }
+               return prev;
+            });
+            break;
+
+           case 'QUEUE_SYNC':
+             // Mirror the queue for late joiners or side-view reference
+             if (payload.data || payload) {
+                const data = payload.data || payload;
+                // Since queue is local to ControlPanel, we don't necessarily 
+                // need it in App state, but we log for sync audit
+                console.log("Broadcast: Queue Synchronized across views", data.length);
              }
-             return prev;
-          });
+             break;
         }
       }
     };
 
-    // Clean start for Operator
+    // Clean Start sequence for Operator
     if (settings.viewType === 'operator') {
-       setPlaybackState({
-         currentTime: 0,
-         phase: 'idle',
-         isPlaying: false,
-         duration: 0
-       });
+       setPlaybackState({ currentTime: 0, phase: 'idle', isPlaying: false, duration: 0 });
        setSession({
-          bumperInUrl: null,
-          bumperOutUrl: null,
-          mediaUrl: null,
-          backgroundUrl: null,
-          isAudioOnly: false,
-          lyrics: [],
-          bpm: null,
-          musicalKey: null,
-          duration: 0,
+          bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
+          isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
        });
     }
 
     return () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       bc.close();
     };
   }, [settings.viewType]);
-
-  // Heartbeat broadcast for Operator to keep helpers in sync
-  useEffect(() => {
-    if (settings.viewType !== 'operator') return;
-
-    const bc = new BroadcastChannel('karaoke-sync');
-    const interval = setInterval(() => {
-      bc.postMessage({ 
-        type: 'COMMAND', 
-        payload: { 
-          action: 'SYNC_STATE', 
-          state: { 
-            ...sessionRef.current,
-            phase: playbackState.phase,
-            isPlaying: playbackState.isPlaying,
-            currentTime: playbackState.currentTime,
-          } 
-        } 
-      });
-    }, 1000); // 1s frequency for perfect duplicating
-
-    return () => {
-      clearInterval(interval);
-      bc.close();
-    };
-  }, [settings.viewType, playbackState.phase, playbackState.isPlaying, playbackState.currentTime]);
 
   // Sync state from Firestore when logged in
   useEffect(() => {
@@ -312,16 +293,32 @@ export default function App() {
   }, []);
 
   const handleStageUpdate = useCallback((state: any) => {
-    setPlaybackState(state);
+    setPlaybackState(prev => ({
+       ...prev,
+       currentTime: state.currentTime,
+       phase: state.phase,
+       isPlaying: state.isPlaying,
+       duration: state.duration || prev.duration,
+       score: state.score !== undefined ? state.score : prev.score
+    }));
     
-    // Check duration change logic using functional update to avoid session dependency
+    // Check duration change logic using functional update
     setSession(prev => {
-      if (prev.duration !== state.duration) {
+      if (state.duration !== undefined && prev.duration !== state.duration) {
         return { ...prev, duration: state.duration };
       }
       return prev;
     });
-  }, []);
+
+    if (user) {
+      updateSessionOnCloud({
+        currentTime: state.currentTime,
+        phase: state.phase,
+        isPlaying: state.isPlaying,
+        score: state.score !== undefined ? state.score : playbackStateRef.current.score
+      });
+    }
+  }, [user, updateSessionOnCloud]);
 
   if (authLoading) {
     return (
@@ -423,6 +420,7 @@ export default function App() {
           <KaraokeStage 
             {...session}
             settings={settings}
+            externalPlaybackState={settings.viewType !== 'operator' ? playbackState : undefined}
             onStateUpdate={handleStageUpdate}
             onMediaUpload={handleMediaUpload}
           />
