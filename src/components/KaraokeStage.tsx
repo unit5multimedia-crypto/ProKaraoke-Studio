@@ -274,7 +274,19 @@ export default function KaraokeStage({
       } else if (upcoming) {
          // User is singing too early
          if (Math.random() > 0.9) showFeedback("Vocal Prep", "Too Early");
+      } else {
+         // FREE SCORER MODE
+         // If we are in a gap or no lyrics are loaded, reward active singing
+         if (pitch > 50 && pitch < 1200) {
+            setScore(s => s + 1);
+            setCurrentAccuracy(prev => Math.min(100, (prev || 0) + 0.4));
+         } else {
+            setCurrentAccuracy(prev => Math.max(0, (prev || 0) - 0.2));
+         }
       }
+    } else if (phase === 'main' && isPlaying) {
+      // Natural decay when not singing
+      setCurrentAccuracy(prev => Math.max(0, (prev || 0) - 0.5));
     }
   }, [pitch, currentTime, phase, isPlaying, lyrics]);
 
@@ -658,67 +670,69 @@ export default function KaraokeStage({
             </div>
 
             {/* Media Player Layer */}
-            {isYouTube ? (
-              <div className="absolute inset-0 z-20 bg-black pointer-events-none">
-                <div 
-                  ref={ytContainerRef}
-                  className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.05]' : 'opacity-100'} pointer-events-auto`}
-                />
-                
-                {/* Interaction Shield - Transparent overlay for Videoke look */}
-                <div className="absolute inset-0 z-[25] bg-transparent" />
-
-                {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
-                {ytReady && !isPlaying && (
+            {settings.viewType !== 'stage' && (
+              isYouTube ? (
+                <div className="absolute inset-0 z-20 bg-black pointer-events-none">
                   <div 
-                    className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
-                    onClick={() => {
-                      try {
-                        let vol = settings.mediaVolume ?? 1.0;
-                        if (!isOperator) vol = 0;
-                        ytPlayerRef.current?.setVolume(vol * 100);
-                        if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
-                        ytPlayerRef.current?.playVideo();
-                        setIsPlaying(true);
-                      } catch(e) {}
-                    }}
-                  >
-                    <div className="text-center">
-                      <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
-                        <Play size={48} fill="currentColor" className="ml-2" />
+                    ref={ytContainerRef}
+                    className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType === 'operator' ? 'opacity-100' : 'opacity-100 scale-[1]'} pointer-events-auto`}
+                  />
+                  
+                  {/* Interaction Shield - Transparent overlay for Videoke look */}
+                  <div className="absolute inset-0 z-[25] bg-transparent" />
+
+                  {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
+                  {ytReady && !isPlaying && (
+                    <div 
+                      className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
+                      onClick={() => {
+                        try {
+                          let vol = settings.mediaVolume ?? 1.0;
+                          if (!isOperator) vol = 0;
+                          ytPlayerRef.current?.setVolume(vol * 100);
+                          if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
+                          ytPlayerRef.current?.playVideo();
+                          setIsPlaying(true);
+                        } catch(e) {}
+                      }}
+                    >
+                      <div className="text-center">
+                        <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
+                          <Play size={48} fill="currentColor" className="ml-2" />
+                        </div>
+                        <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
                       </div>
-                      <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
                     </div>
-                  </div>
-                )}
-              </div>
-            ) : mediaUrl ? (
-              isAudioOnly ? (
-                <audio
-                  ref={mainRef as any}
-                  src={mediaUrl}
-                  autoPlay
-                  playsInline
-                  muted={!isOperator}
-                  crossOrigin="anonymous"
-                  onTimeUpdate={handleTimeUpdate}
-                  onEnded={handleMediaEnd}
-                  className="hidden"
-                />
-              ) : (
-                <video
-                  ref={mainRef as any}
-                  src={mediaUrl}
-                  autoPlay
-                  playsInline
-                  muted={!isOperator}
-                  crossOrigin="anonymous"
-                  onTimeUpdate={handleTimeUpdate}
-                  onEnded={handleMediaEnd}
-                  className="absolute inset-0 z-20 w-full h-full object-cover pointer-events-none"
-                />
-              )
-            ) : null}
+                  )}
+                </div>
+              ) : mediaUrl ? (
+                isAudioOnly ? (
+                  <audio
+                    ref={mainRef as any}
+                    src={mediaUrl}
+                    autoPlay
+                    playsInline
+                    muted={!isOperator}
+                    crossOrigin="anonymous"
+                    onTimeUpdate={handleTimeUpdate}
+                    onEnded={handleMediaEnd}
+                    className="hidden"
+                  />
+                ) : (
+                  <video
+                    ref={mainRef as any}
+                    src={mediaUrl}
+                    autoPlay
+                    playsInline
+                    muted={!isOperator}
+                    crossOrigin="anonymous"
+                    onTimeUpdate={handleTimeUpdate}
+                    onEnded={handleMediaEnd}
+                    className="absolute inset-0 z-20 w-full h-full object-cover pointer-events-none"
+                  />
+                )
+              ) : null
+            )}
 
             {/* UI Overlays */}
             {settings.viewType === 'operator' && (
@@ -819,8 +833,8 @@ export default function KaraokeStage({
     </div>
   )}
 
-            {/* Lyrics Layer (Clean Feed) */}
-            {settings.viewType !== 'stage' && (
+            {/* Lyrics Layer (Software Lyrics) */}
+            {settings.viewType !== 'stage' && (isAudioOnly || settings.viewType !== 'prompter') && (
               <div className={`absolute left-0 right-0 px-16 pointer-events-none z-40 transition-all duration-1000 ${settings.lyricsPosition === 'center' ? 'top-1/2 -translate-y-1/2' : 'bottom-32'}`}>
               <div className="max-w-5xl mx-auto text-center">
                 <AnimatePresence mode="wait">
@@ -913,7 +927,10 @@ export default function KaraokeStage({
                    transition={{ type: 'spring', damping: 10, delay: 0.5 }}
                    className="text-9xl font-display font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)]"
                 >
-                  {Math.min(100, Math.floor((score / Math.max(1, (lyrics.length * 50))) * 100))}%
+                  {lyrics.length > 0 
+                    ? Math.min(100, Math.floor((score / Math.max(1, (lyrics.length * 50))) * 100))
+                    : Math.min(100, Math.floor((score / 1000) * 100)) // Fallback for video matches
+                  }%
                 </motion.div>
                 <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-brand-gold font-mono font-bold text-xs uppercase tracking-widest whitespace-nowrap">
                    {score.toLocaleString()} POINTS
