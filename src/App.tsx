@@ -31,7 +31,29 @@ export default function App() {
       return null;
     }
   });
-  const [settings, setSettings] = useState<KaraokeSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<KaraokeSettings>(() => {
+    let finalSettings = { ...DEFAULT_SETTINGS };
+    // 1. Merge from LocalStorage
+    try {
+      const saved = localStorage.getItem('karaoke_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const { viewType, ...otherSettings } = parsed;
+        finalSettings = { ...finalSettings, ...otherSettings };
+      }
+    } catch (e) {
+      console.error('Failed to load settings', e);
+    }
+
+    // 2. Override from URL (Primary source of truth for current tab session)
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view') as ViewType | null;
+    if (viewParam) {
+      finalSettings.viewType = viewParam;
+    }
+    return finalSettings;
+  });
+
   const [session, setSession] = useState<KaraokeSession>({
     bumperInUrl: null,
     bumperOutUrl: null,
@@ -43,7 +65,7 @@ export default function App() {
     musicalKey: null,
     duration: 0,
   });
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(settings.viewType === 'operator');
   const [playbackState, setPlaybackState] = useState({
     currentTime: 0,
     phase: 'idle',
@@ -69,8 +91,27 @@ export default function App() {
       setAuthLoading(false);
     });
 
+    // Initialize YouTube API once safely
+    if (!window.YT) {
+      const scriptTag = document.getElementById('youtube-iframe-api');
+      if (!scriptTag) {
+        const tag = document.createElement('script');
+        tag.id = 'youtube-iframe-api';
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      }
+    }
+
+    const titles: Record<ViewType, string> = {
+      operator: 'ProKaraoke Studio - Operator Desk',
+      prompter: 'ProKaraoke Studio - Prompter View',
+      visuals: 'ProKaraoke Studio - Visual View'
+    };
+    document.title = titles[settings.viewType] || 'ProKaraoke Studio';
+
     return () => unsubscribeAuth();
-  }, []);
+  }, [settings.viewType]);
 
   // Unified BroadcastChannel and Exit Safety
   useEffect(() => {
@@ -119,17 +160,19 @@ export default function App() {
         switch (payload.action) {
           case 'APP_EXIT':
             // Total Shutdown Hook
-            if (window.electronAPI) {
-              // Reliably close in desktop environment if possible
-              try { (window as any).close(); } catch(e) {}
+            console.log("Shutting down view:", settings.viewType);
+            if (window.electronAPI?.exitApp) {
+               window.electronAPI.exitApp();
             }
             window.close();
-            // Fallback for browser tabs: clear and reload to idle
+            // Fallback for browser tabs: clear and navigate away
             setSession({
                bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
                isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
             });
-            window.location.reload();
+            setTimeout(() => {
+               window.location.href = 'about:blank';
+            }, 100);
             break;
 
           case 'SYNC_STATE':

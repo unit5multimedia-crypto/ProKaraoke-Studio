@@ -10,10 +10,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
   receive: (channel: string, func: (...args: any[]) => void) => {
-    let validChannels = ["fromMain"];
+    let validChannels = ["fromMain", "app-exit"];
     if (validChannels.includes(channel)) {
       // Deliberately strip event as it includes `sender` 
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
-  }
+  },
+  exitApp: () => ipcRenderer.send('app-exit')
 });

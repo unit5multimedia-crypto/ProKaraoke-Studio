@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { KaraokeSettings, KaraokeSession, SongQueueItem } from '../types';
-import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Chrome, MonitorPlay, ExternalLink, Copy, HardDrive, FileText, CloudDownload } from 'lucide-react';
+import { Settings, Video, Music, Image as ImageIcon, Type, Palette, AlignCenter, Layout, Eye, EyeOff, Timer, RotateCcw, ListMusic, Search, Trash2, Plus, Play, Layers, LogOut, Power, XOctagon, Chrome, MonitorPlay, ExternalLink, Copy, HardDrive, FileText, CloudDownload } from 'lucide-react';
 import { analyzeAudio } from '../lib/audioAnalysis';
 import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtubeSearchService';
 import { listDriveFiles, getFileContent, getDriveDownloadUrl, DriveFile } from '../services/googleDriveService';
@@ -352,26 +352,26 @@ export default function ControlPanel({
   const handleShutdown = () => {
     if (window.confirm("ARE YOU SURE? This will shut down the entire Praise Studio system and close all projection windows.")) {
        // 1. Signal everyone else first using a stable channel send
-       const exitBc = new BroadcastChannel('karaoke-sync');
-       exitBc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+       const bc = new BroadcastChannel('karaoke-sync');
+       bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
        
        // 2. Clear local session data
        localStorage.removeItem('karaoke_queue');
        
        // 3. Attempt to close this window
-       if (window.electronAPI) {
-          try { (window as any).close(); } catch(e) {}
+       if (window.electronAPI?.exitApp) {
+          window.electronAPI.exitApp();
        }
        
        try {
          window.close();
        } catch (e) {}
        
-       // 4. Fallback: navigate to blank or reload to idle
+       // 4. Fallback: navigate to blank
        setTimeout(() => {
-         exitBc.close();
+         bc.close();
          window.location.href = 'about:blank';
-       }, 300);
+       }, 200);
     }
   };
 
@@ -402,7 +402,7 @@ export default function ControlPanel({
               className="w-8 h-8 rounded border border-red-500/20 bg-red-500/5 flex items-center justify-center text-red-500/40 hover:text-red-400 hover:border-red-400 hover:bg-red-400/10 transition-all group relative"
               title="SYSTEM SHUTDOWN // CLOSE ALL WINDOWS"
             >
-              <LogOut size={14} />
+              <Power size={14} />
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-brand-dark" />
             </button>
           )}
