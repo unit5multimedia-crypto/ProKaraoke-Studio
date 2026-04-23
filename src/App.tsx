@@ -157,6 +157,15 @@ export default function App() {
 
   }, []);
 
+  useEffect(() => {
+    const titles: Record<ViewType, string> = {
+      operator: 'ProKaraoke Studio - Operator Desk',
+      prompter: 'ProKaraoke Studio - Prompter View',
+      stage: 'ProKaraoke Studio - Visual View'
+    };
+    document.title = titles[settings.viewType] || 'ProKaraoke Studio';
+  }, [settings.viewType]);
+
   const handleMediaUpload = useCallback((type: string, file: File, url: string) => {
     mediaFilesRef.current[type] = file;
     setSession(prev => ({ ...prev, [type]: url }));

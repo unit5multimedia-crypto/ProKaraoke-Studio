@@ -670,69 +670,67 @@ export default function KaraokeStage({
             </div>
 
             {/* Media Player Layer */}
-            {settings.viewType !== 'stage' && (
-              isYouTube ? (
-                <div className="absolute inset-0 z-20 bg-black pointer-events-none">
-                  <div 
-                    ref={ytContainerRef}
-                    className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType === 'operator' ? 'opacity-100' : 'opacity-100 scale-[1]'} pointer-events-auto`}
-                  />
-                  
-                  {/* Interaction Shield - Transparent overlay for Videoke look */}
-                  <div className="absolute inset-0 z-[25] bg-transparent" />
+            {isYouTube ? (
+              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'stage' ? 'opacity-0' : 'opacity-100'}`}>
+                <div 
+                  ref={ytContainerRef}
+                  className="w-full h-full object-cover transition-all duration-1000 pointer-events-auto"
+                />
+                
+                {/* Interaction Shield - Transparent overlay for Videoke look */}
+                <div className="absolute inset-0 z-[25] bg-transparent" />
 
-                  {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
-                  {ytReady && !isPlaying && (
-                    <div 
-                      className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
-                      onClick={() => {
-                        try {
-                          let vol = settings.mediaVolume ?? 1.0;
-                          if (!isOperator) vol = 0;
-                          ytPlayerRef.current?.setVolume(vol * 100);
-                          if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
-                          ytPlayerRef.current?.playVideo();
-                          setIsPlaying(true);
-                        } catch(e) {}
-                      }}
-                    >
-                      <div className="text-center">
-                        <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
-                          <Play size={48} fill="currentColor" className="ml-2" />
-                        </div>
-                        <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
+                {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
+                {ytReady && !isPlaying && (
+                  <div 
+                    className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40 pointer-events-auto"
+                    onClick={() => {
+                      try {
+                        let vol = settings.mediaVolume ?? 1.0;
+                        if (!isOperator) vol = 0;
+                        ytPlayerRef.current?.setVolume(vol * 100);
+                        if(isOperator && vol > 0) ytPlayerRef.current?.unMute();
+                        ytPlayerRef.current?.playVideo();
+                        setIsPlaying(true);
+                      } catch(e) {}
+                    }}
+                  >
+                    <div className="text-center">
+                      <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
+                        <Play size={48} fill="currentColor" className="ml-2" />
                       </div>
+                      <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
                     </div>
-                  )}
-                </div>
-              ) : mediaUrl ? (
-                isAudioOnly ? (
-                  <audio
-                    ref={mainRef as any}
-                    src={mediaUrl}
-                    autoPlay
-                    playsInline
-                    muted={!isOperator}
-                    crossOrigin="anonymous"
-                    onTimeUpdate={handleTimeUpdate}
-                    onEnded={handleMediaEnd}
-                    className="hidden"
-                  />
-                ) : (
-                  <video
-                    ref={mainRef as any}
-                    src={mediaUrl}
-                    autoPlay
-                    playsInline
-                    muted={!isOperator}
-                    crossOrigin="anonymous"
-                    onTimeUpdate={handleTimeUpdate}
-                    onEnded={handleMediaEnd}
-                    className="absolute inset-0 z-20 w-full h-full object-cover pointer-events-none"
-                  />
-                )
-              ) : null
-            )}
+                  </div>
+                )}
+              </div>
+            ) : mediaUrl ? (
+              isAudioOnly ? (
+                <audio
+                  ref={mainRef as any}
+                  src={mediaUrl}
+                  autoPlay
+                  playsInline
+                  muted={!isOperator}
+                  crossOrigin="anonymous"
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleMediaEnd}
+                  className="hidden"
+                />
+              ) : (
+                <video
+                  ref={mainRef as any}
+                  src={mediaUrl}
+                  autoPlay
+                  playsInline
+                  muted={!isOperator}
+                  crossOrigin="anonymous"
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleMediaEnd}
+                  className={`absolute inset-0 z-20 w-full h-full object-cover pointer-events-none ${settings.viewType === 'stage' ? 'opacity-0' : 'opacity-100'}`}
+                />
+              )
+            ) : null}
 
             {/* UI Overlays */}
             {settings.viewType === 'operator' && (
