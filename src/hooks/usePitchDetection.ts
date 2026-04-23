@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { detectPitch } from '../lib/pitchDetection';
+import { getAudioContext, resumeAudioContext } from '../lib/audioContext';
 
 export function useVocalEngine(
   isActive: boolean,
@@ -16,17 +17,15 @@ export function useVocalEngine(
        if (engineRef.current && engineRef.current.stream) {
          engineRef.current.stream.getTracks().forEach((t: any) => t.stop());
        }
-       if (engineRef.current && engineRef.current.actx) {
-         if (engineRef.current.actx.state !== 'closed') engineRef.current.actx.close();
-       }
+       // Note: We don't close the shared context here
        engineRef.current = null;
        (window as any).karaokeMicAnalyser = null;
        return;
     }
 
     let isMounted = true;
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    const actx = new AudioContextClass();
+    const ctx = getAudioContext();
+    resumeAudioContext();
 
     const setup = async () => {
       try {
@@ -34,50 +33,47 @@ export function useVocalEngine(
           audio: deviceId ? { deviceId: { exact: deviceId } } : true
         });
 
-        if (outputId && typeof (actx as any).setSinkId === 'function') {
-          try { await (actx as any).setSinkId(outputId); } catch(e) { console.error("Sink ID error", e); }
+        if (outputId && typeof (ctx as any).setSinkId === 'function') {
+          try { await (ctx as any).setSinkId(outputId); } catch(e) { console.error("Sink ID error", e); }
         }
 
-        const source = actx.createMediaStreamSource(stream);
+        const source = ctx.createMediaStreamSource(stream);
 
-        const analyser = actx.createAnalyser();
+        const analyser = ctx.createAnalyser();
         analyser.fftSize = 2048;
         (window as any).karaokeMicAnalyser = analyser;
 
-        const micGain = actx.createGain();
+        const micGain = ctx.createGain();
         micGain.gain.value = volume;
 
-        // Classic Videoke Echo Loop
-        const delay = actx.createDelay(2.0); // max delay 2s
-        delay.delayTime.value = 0.25; // 250ms karaoke ping-pong
-        const delayFeedback = actx.createGain();
+        const delay = ctx.createDelay(2.0);
+        delay.delayTime.value = 0.25;
+        const delayFeedback = ctx.createGain();
         delayFeedback.gain.value = 0.4;
-        const echoGain = actx.createGain();
+        const echoGain = ctx.createGain();
         echoGain.gain.value = echo;
 
-        // Route audio graph
         source.connect(analyser); 
-        
         source.connect(micGain);
-        micGain.connect(actx.destination);
+        micGain.connect(ctx.destination);
 
         source.connect(delay);
         delay.connect(delayFeedback);
         delayFeedback.connect(delay);
         delay.connect(echoGain);
-        echoGain.connect(actx.destination);
+        echoGain.connect(ctx.destination);
 
         const timeData = new Float32Array(analyser.fftSize);
         const loop = () => {
           if (!isMounted) return;
           analyser.getFloatTimeDomainData(timeData);
-          const p = detectPitch(timeData, actx.sampleRate);
+          const p = detectPitch(timeData, ctx.sampleRate);
           setPitch(p);
           requestAnimationFrame(loop);
         };
         loop();
 
-        engineRef.current = { actx, stream, micGain, echoGain };
+        engineRef.current = { ctx, stream, micGain, echoGain };
       } catch (e) {
         console.error("Vocal engine setup failed. Check mic permissions.", e);
       }
@@ -90,12 +86,9 @@ export function useVocalEngine(
       (window as any).karaokeMicAnalyser = null;
       if (engineRef.current) {
         engineRef.current.stream.getTracks().forEach((t: any) => t.stop());
-        if (engineRef.current.actx.state !== 'closed') {
-           engineRef.current.actx.close();
-        }
       }
     };
-  }, [isActive, deviceId, outputId]); // effect manages lifecycle based on devices, volume/echo are real-time updated below
+  }, [isActive, deviceId, outputId]);
 
   useEffect(() => {
      if (engineRef.current) {

@@ -97,25 +97,18 @@ export default function KaraokeStage({
   // Connect analyzer based on view and media type
   useEffect(() => {
     const setupAnalyzer = async () => {
-      if (phase !== 'main') return;
+      // We want analyzer active in bumper and main phases
+      if (phase !== 'main' && phase !== 'bumper') return;
 
-      // In visuals view, we prefer the mic because the media is muted locally
-      if (settings.viewType === 'visuals') {
-        await initAnalyzer(null, true);
-        return;
-      }
-
-      // In operator view or prompter, try capturing the element first
-      if (isYouTube) {
-        // YouTube iframes cannot be captured, so we use the mic to "hear" the room
-        await initAnalyzer(null, true);
-      } else if (mainRef.current) {
-        await initAnalyzer(mainRef.current as HTMLMediaElement, false);
-      }
+      const element = phase === 'bumper' ? bumperRef.current : (isYouTube ? null : mainRef.current);
+      
+      // Always try to enable Mic combined with Media (if media is available)
+      // This ensures visuals react to both music and singer
+      await initAnalyzer(element as HTMLMediaElement, true);
     };
 
     setupAnalyzer();
-  }, [phase, isYouTube, mainRef.current, settings.viewType]);
+  }, [phase, isYouTube, settings.viewType, bumperUrl, mediaUrl]);
 
   // Sound FX System (No assets needed, using Oscillator)
   const playSFX = (type: 'win' | 'score' | 'start') => {

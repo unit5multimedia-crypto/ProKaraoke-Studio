@@ -1,75 +1,70 @@
 import { useEffect, useRef, useState } from 'react';
+import { getAudioContext, resumeAudioContext } from '../lib/audioContext';
+
+// Global registry to prevent double-initialization of media elements which causes freezing
+const mediaSourceRegistry = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
 
 export function useAudioAnalyzer(isActive: boolean) {
   const [data, setData] = useState<Uint8Array>(new Uint8Array(0));
-  const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | MediaStreamAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
-  const initAnalyzer = async (element: HTMLMediaElement | null, useMic: boolean = false) => {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextClass) return;
-
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContextClass();
-    }
-    const ctx = audioContextRef.current;
+  const initAnalyzer = async (element: HTMLMediaElement | null, enableMic: boolean = true) => {
+    const ctx = getAudioContext();
+    await resumeAudioContext();
 
     if (!analyserRef.current) {
       analyserRef.current = ctx.createAnalyser();
       analyserRef.current.fftSize = 256;
+      analyserRef.current.smoothingTimeConstant = 0.8;
     }
     const analyser = analyserRef.current;
 
-    // Disconnect old source
-    if (sourceRef.current) {
-      try { sourceRef.current.disconnect(); } catch(e) {}
+    // 1. Handle Media Element (Music)
+    if (element && element instanceof HTMLMediaElement) {
+      if (!mediaSourceRegistry.has(element)) {
+        try {
+          const mSource = ctx.createMediaElementSource(element);
+          mSource.connect(analyser);
+          mSource.connect(ctx.destination);
+          mediaSourceRegistry.set(element, mSource);
+        } catch (e) {
+          console.warn("Media capture blocked or already initialized in registry:", e);
+        }
+      } else {
+        const existingSource = mediaSourceRegistry.get(element);
+        if (existingSource) {
+           try { existingSource.connect(analyser); } catch(e) {}
+        }
+      }
     }
 
-    if (useMic) {
+    // 2. Handle Microphone (Vocals) - Additive
+    if (enableMic && !micSourceRef.current) {
       try {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(t => t.stop());
-        }
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        streamRef.current = stream;
-        const micSource = ctx.createMediaStreamSource(stream);
-        micSource.connect(analyser);
-        sourceRef.current = micSource;
+        const mSource = ctx.createMediaStreamSource(stream);
+        mSource.connect(analyser);
+        micSourceRef.current = mSource;
       } catch (e) {
-        console.error("Mic access denied for analyzer", e);
-      }
-    } else if (element && element instanceof HTMLMediaElement) {
-      try {
-        const mediaSource = ctx.createMediaElementSource(element);
-        mediaSource.connect(analyser);
-        analyser.connect(ctx.destination);
-        sourceRef.current = mediaSource;
-      } catch (e) {
-        console.warn("CORS/Security restricted element capture, falling back to mic", e);
-        initAnalyzer(null, true);
+        console.error("Mic access denied for visuals", e);
       }
     }
   };
 
   useEffect(() => {
-    if (!isActive || !analyserRef.current) {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      return;
-    }
-
     const update = () => {
-      if (analyserRef.current) {
+      if (isActive && analyserRef.current) {
         const buffer = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(buffer);
-        setData(buffer);
+        setData(new Uint8Array(buffer));
       }
-      animationRef.current = requestAnimationFrame(update);
+      animationId = requestAnimationFrame(update);
     };
 
-    update();
+    let animationId = requestAnimationFrame(update);
+    animationRef.current = animationId;
 
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
