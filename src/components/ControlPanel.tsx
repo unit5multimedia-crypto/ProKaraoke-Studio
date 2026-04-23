@@ -287,7 +287,7 @@ export default function ControlPanel({
            ...prev, 
            mediaUrl: url, 
            isYouTube: false,
-           isAudioOnly: file.type.startsWith('audio/'),
+           isAudioOnly: file.mimeType.startsWith('audio/'),
            bpm, 
            musicalKey: key 
          }));
@@ -295,7 +295,7 @@ export default function ControlPanel({
             onSyncSession({ 
               mediaUrl: url, 
               isYouTube: false, 
-              isAudioOnly: file.type.startsWith('audio/'),
+              isAudioOnly: file.mimeType.startsWith('audio/'),
               bpm, 
               musicalKey: key 
             });

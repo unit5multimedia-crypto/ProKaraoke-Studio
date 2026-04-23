@@ -30,23 +30,7 @@ export const signInWithGoogle = async () => {
     }
     
     return { user: result.user, accessToken };
-  } catch (error: any) {
-    // For localhost development, show a helpful message
-    if (error.code === 'auth/unauthorized-domain') {
-      console.warn("Firebase Auth: Domain not authorized. Running in demo mode.");
-      console.warn("To fix: Add localhost:3000 to Firebase Console > Authentication > Authorized domains");
-      // Return a mock user for local development to test the UI
-      const mockUser = {
-        uid: 'demo-user-' + Math.random().toString(36).substr(2, 9),
-        email: 'demo@localhost',
-        displayName: 'Demo User',
-        photoURL: null,
-        isAnonymous: false,
-        metadata: { createdAt: new Date(), lastSignInTime: new Date() },
-        providerData: []
-      } as any;
-      return { user: mockUser, accessToken: 'demo-token-dev' };
-    }
+  } catch (error) {
     console.error("Auth Error:", error);
     throw error;
   }

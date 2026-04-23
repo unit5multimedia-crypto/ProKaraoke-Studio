@@ -10,7 +10,7 @@ import ControlPanel from './components/ControlPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { parseLyrics } from './lib/lyricParser';
 import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
-import { auth, db, User, validateConnection } from './lib/firebase';
+import { auth, db, User, validateConnection, signInWithGoogle } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
@@ -214,19 +214,17 @@ export default function App() {
               
               <button 
                 onClick={async () => {
-                  import('./lib/firebase').then(async ({ signInWithGoogle }) => {
-                    try {
-                      const { accessToken } = await signInWithGoogle();
-                      if (accessToken) {
-                         const expiry = Date.now() + 3600 * 1000;
-                         const authData = { accessToken, expiry };
-                         setUserAuth(authData);
-                         localStorage.setItem('google_auth', JSON.stringify(authData));
-                      }
-                    } catch (e) {
-                      alert(`Login failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                  try {
+                    const { accessToken } = await signInWithGoogle();
+                    if (accessToken) {
+                       const expiry = Date.now() + 3600 * 1000;
+                       const authData = { accessToken, expiry };
+                       setUserAuth(authData);
+                       localStorage.setItem('google_auth', JSON.stringify(authData));
                     }
-                  });
+                  } catch (e) {
+                    alert(`Login failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                  }
                 }}
                 className="w-full h-12 bg-brand-gold text-black font-black text-sm rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-gold/10"
               >
