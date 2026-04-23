@@ -70,15 +70,15 @@ export default function App() {
   useEffect(() => {
     const bc = new BroadcastChannel('karaoke-sync');
 
-    // Prevention of accidental closing and total session cleanup
+    // Standard way to trigger browser exit confirmation
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (settings.viewType === 'operator') {
-        const msg = "Are you sure you want to exit? The current praise session and all projection windows will be closed.";
-        e.preventDefault();
-        e.returnValue = msg;
-        
-        // Signal others to clean up
+        const msg = "Are you sure you want to exit? All projection windows will be closed.";
+        // Signal others to clean up immediately before browser kills process
         bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        
+        e.preventDefault();
+        e.returnValue = msg; 
         return msg;
       }
     };
@@ -91,53 +91,47 @@ export default function App() {
       // If we are NOT the operator, handle sync state from operator
       if (settings.viewType !== 'operator' && type === 'COMMAND') {
         if (payload.action === 'APP_EXIT') {
-          // Force refresh on helper windows if operator leaves
-          setSession({
-            bumperInUrl: null,
-            bumperOutUrl: null,
-            mediaUrl: null,
-            backgroundUrl: null,
-            isAudioOnly: false,
-            lyrics: [],
-            bpm: null,
-            musicalKey: null,
-            duration: 0,
-          });
-          setPlaybackState({
-            currentTime: 0,
-            phase: 'idle',
-            isPlaying: false,
-            duration: 0
-          });
-          window.location.reload();
+          // Attempt to close helper windows on operator exit
+          window.close();
+          // Fallback if window.close is blocked
+          setTimeout(() => {
+             setPlaybackState(prev => ({ ...prev, phase: 'idle', isPlaying: false }));
+             window.location.reload(); 
+          }, 100);
           return;
         }
 
         if (payload.action === 'SYNC_STATE') {
           const { state } = payload;
           
-          // Only update session if media changed to avoid unnecessary re-renders/YouTube reloads
+          // Duplicate session content
           setSession(prev => {
             const hasChanged = 
               state.mediaUrl !== prev.mediaUrl || 
               state.bumperInUrl !== prev.bumperInUrl ||
-              state.bumperOutUrl !== prev.bumperOutUrl;
+              state.bumperOutUrl !== prev.bumperOutUrl ||
+              (state.lyrics && state.lyrics.length !== prev.lyrics.length);
               
             if (!hasChanged) return prev;
 
             return {
               ...prev,
-              mediaUrl: state.mediaUrl || prev.mediaUrl,
-              bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
-              bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
-              lyrics: state.lyrics || prev.lyrics,
-              bpm: state.bpm || prev.bpm,
-              musicalKey: state.musicalKey || prev.musicalKey
+              mediaUrl: state.mediaUrl,
+              bumperInUrl: state.bumperInUrl,
+              bumperOutUrl: state.bumperOutUrl,
+              lyrics: state.lyrics,
+              bpm: state.bpm,
+              musicalKey: state.musicalKey,
+              isAudioOnly: state.isAudioOnly
             };
           });
           
           setPlaybackState(prev => {
-             if (prev.phase === state.phase && prev.isPlaying === state.isPlaying && Math.abs(prev.currentTime - state.currentTime) < 2) return prev;
+             const timeDiff = Math.abs(prev.currentTime - state.currentTime);
+             const shouldSyncTime = timeDiff > 3; // Trigger re-sync if drifted
+             
+             if (prev.phase === state.phase && prev.isPlaying === state.isPlaying && !shouldSyncTime) return prev;
+             
              return {
                 ...prev,
                 phase: state.phase,
@@ -151,7 +145,6 @@ export default function App() {
 
     // Clean start for Operator
     if (settings.viewType === 'operator') {
-       // Reset local playback and session state on load for a clean start
        setPlaybackState({
          currentTime: 0,
          phase: 'idle',
@@ -176,6 +169,32 @@ export default function App() {
       bc.close();
     };
   }, [settings.viewType]);
+
+  // Heartbeat broadcast for Operator to keep helpers in sync
+  useEffect(() => {
+    if (settings.viewType !== 'operator') return;
+
+    const bc = new BroadcastChannel('karaoke-sync');
+    const interval = setInterval(() => {
+      bc.postMessage({ 
+        type: 'COMMAND', 
+        payload: { 
+          action: 'SYNC_STATE', 
+          state: { 
+            ...sessionRef.current,
+            phase: playbackState.phase,
+            isPlaying: playbackState.isPlaying,
+            currentTime: playbackState.currentTime,
+          } 
+        } 
+      });
+    }, 3000);
+
+    return () => {
+      clearInterval(interval);
+      bc.close();
+    };
+  }, [settings.viewType, playbackState.phase, playbackState.isPlaying, playbackState.currentTime]);
 
   // Sync state from Firestore when logged in
   useEffect(() => {

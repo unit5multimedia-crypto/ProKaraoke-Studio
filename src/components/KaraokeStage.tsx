@@ -425,14 +425,6 @@ export default function KaraokeStage({
   useEffect(() => {
     // Session State Sync logic
     const bc = new BroadcastChannel('karaoke-sync');
-    
-    // Safety: Handle window closing
-    const handleUnload = () => {
-      if (settings.viewType === 'operator') {
-        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
-      }
-    };
-    window.addEventListener('beforeunload', handleUnload);
 
     // If we are a helper window, request current state immediately
     if (settings.viewType !== 'operator') {
@@ -458,7 +450,8 @@ export default function KaraokeStage({
               mediaUrl, 
               lyrics,
               bpm,
-              musicalKey
+              musicalKey,
+              isAudioOnly
             } 
           } 
         });
@@ -469,19 +462,21 @@ export default function KaraokeStage({
       
       if (type === 'COMMAND') {
         switch (payload.action) {
-          case 'APP_EXIT':
-            // If the operator exits, reset helper windows to idle or self-destruct if possible
-            setPhase('idle');
-            setIsPlaying(false);
-            window.location.reload(); // Refresh to clean state
-            break;
           case 'SYNC_STATE':
             // Update local state from operator
-            setPhase(payload.state.phase);
-            setIsPlaying(payload.state.isPlaying);
-            setScore(payload.state.score);
-            if (Math.abs(payload.state.currentTime - currentTime) > 3) {
+            if (payload.state.phase !== phase) setPhase(payload.state.phase);
+            if (payload.state.isPlaying !== isPlaying) setIsPlaying(payload.state.isPlaying);
+            if (payload.state.score !== score) setScore(payload.state.score);
+            
+            // Sync time if significantly different
+            const timeDiff = Math.abs(payload.state.currentTime - currentTime);
+            if (timeDiff > 3) {
               setCurrentTime(payload.state.currentTime);
+              
+              // If YouTube is active, force a seek to match operator exactly
+              if (isYouTube && ytReady && ytPlayerRef.current) {
+                 try { ytPlayerRef.current.seekTo(payload.state.currentTime, true); } catch(e) {}
+              }
             }
             break;
           case 'START':
@@ -515,7 +510,7 @@ export default function KaraokeStage({
     return () => {
       bc.close();
     };
-  }, [settings.viewType, phase, isPlaying, currentTime, score]);
+  }, [settings.viewType, phase, isPlaying, currentTime, score, isYouTube, ytReady]);
 
   // YouTube iframe initialization logic
   useEffect(() => {

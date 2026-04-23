@@ -28,7 +28,6 @@ export function useAudioAnalyzer(isActive: boolean) {
 
     // Handle Media Element (Music)
     if (element && element instanceof HTMLMediaElement) {
-      // Check if already registered or currently being initialized
       if (mediaSourceRegistry.has(element)) {
         const existingSource = mediaSourceRegistry.get(element);
         if (existingSource) {
@@ -37,26 +36,23 @@ export function useAudioAnalyzer(isActive: boolean) {
              existingSource.connect(ctx.destination);
            } catch(e) {}
         }
-        return;
-      }
-
-      if (pendingInitializations.has(element)) return;
-
-      pendingInitializations.add(element);
-      try {
-        const mSource = ctx.createMediaElementSource(element);
-        mSource.connect(currentAnalyser);
-        mSource.connect(ctx.destination);
-        mediaSourceRegistry.set(element, mSource);
-        console.log("AudioAnalyzer: Connected new media element to destination");
-      } catch (e) {
-        console.warn("Media capture blocked or already initialized in registry:", e);
-      } finally {
-        pendingInitializations.delete(element);
+      } else if (!pendingInitializations.has(element)) {
+        pendingInitializations.add(element);
+        try {
+          const mSource = ctx.createMediaElementSource(element);
+          mSource.connect(currentAnalyser);
+          mSource.connect(ctx.destination);
+          mediaSourceRegistry.set(element, mSource);
+          console.log("AudioAnalyzer: Connected new media element to destination");
+        } catch (e) {
+          console.warn("Media capture blocked or already initialized in registry:", e);
+        } finally {
+          pendingInitializations.delete(element);
+        }
       }
     }
 
-    // 2. Handle Microphone (Vocals) - Additive to visuals only
+    // 2. Handle Microphone (Vocals) - Additive to visuals
     if (enableMic && !micSourceRef.current) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
