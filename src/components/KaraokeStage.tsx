@@ -5,6 +5,7 @@ import { useVocalEngine } from '../hooks/usePitchDetection';
 import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
 import { VisualBackground } from './VisualBackground';
 import { Mic, Music, Play, Pause, RotateCcw, Award, Trophy, ListMusic } from 'lucide-react';
+import { sendSyncMessage } from '../lib/syncChannel';
 
 declare global {
   interface Window {
@@ -32,8 +33,6 @@ interface KaraokeStageProps {
   onStateUpdate?: (state: { currentTime: number; phase: any; isPlaying: boolean; duration: number }) => void;
   onMediaUpload?: (type: string, file: File, url: string) => void;
 }
-
-const karaokeSyncClient = new BroadcastChannel('karaoke-sync');
 
 export default function KaraokeStage({
   bumperInUrl,
@@ -374,7 +373,7 @@ export default function KaraokeStage({
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
-      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperInUrl ? 'bumper' : 'main' } });
+      sendSyncMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperInUrl ? 'bumper' : 'main' } });
     }
   };
 
@@ -382,7 +381,7 @@ export default function KaraokeStage({
     if (phase === 'bumper') {
       setPhase('main');
       if (settings.viewType === 'operator') {
-        karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'main' } });
+        sendSyncMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'main' } });
       }
     } else if (phase === 'outro') {
       setPhase('finished');
@@ -402,7 +401,7 @@ export default function KaraokeStage({
     }, 1000);
     
     if (settings.viewType === 'operator') {
-      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'FINISH' } });
+      sendSyncMessage({ type: 'COMMAND', payload: { action: 'FINISH' } });
     }
   };
 
@@ -410,7 +409,7 @@ export default function KaraokeStage({
     if (bumperOutUrl) {
       setPhase('outro');
       if (settings.viewType === 'operator') {
-        karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'outro' } });
+        sendSyncMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'outro' } });
       }
     } else {
       setPhase('finished');
@@ -428,7 +427,7 @@ export default function KaraokeStage({
 
     // Broadcast if operator
     if (settings.viewType === 'operator') {
-      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
+      sendSyncMessage({ type: 'COMMAND', payload: { action: 'RESET' } });
     }
   };
 
@@ -557,7 +556,7 @@ export default function KaraokeStage({
     const newState = !isPlaying;
     setIsPlaying(newState);
     if (settings.viewType === 'operator') {
-      karaokeSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
+      sendSyncMessage({ type: 'COMMAND', payload: { action: 'PAUSE', state: newState } });
     }
   };
 
@@ -599,7 +598,7 @@ export default function KaraokeStage({
         <div className="absolute bottom-6 right-6 opacity-0 hover:opacity-100 transition-opacity z-[100]">
            <a 
              href="?view=operator" 
-             className="text-[9px] font-mono text-white/20 hover:text-brand-gold uppercase tracking-widest border border-white/5 bg-black/40 px-3 py-1.5 rounded-full"
+             className="no-drag text-[9px] font-mono text-white/20 hover:text-brand-gold uppercase tracking-widest border border-white/5 bg-black/40 px-3 py-1.5 rounded-full"
            >
              Operator console loaded
            </a>
@@ -628,7 +627,7 @@ export default function KaraokeStage({
               <button
                 onClick={handleStart}
                 disabled={!mediaUrl && !bumperInUrl}
-                className={`px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperInUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
+                className={`no-drag px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperInUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
               >
                 <Play size={24} fill="currentColor" /> START SHOW
               </button>

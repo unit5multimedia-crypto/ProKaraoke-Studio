@@ -7,6 +7,7 @@ import { searchKaraoke, SearchResult, getPlaylistItems } from '../services/youtu
 import { listDriveFiles, getFileContent, getDriveDownloadUrl, DriveFile } from '../services/googleDriveService';
 import { auth, signInWithGoogle, User } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
+import { sendSyncMessage } from '../lib/syncChannel';
 
 const MicLevelMeter = () => {
   const barRef = React.useRef<HTMLDivElement>(null);
@@ -52,8 +53,6 @@ interface ControlPanelProps {
   onSyncSession?: (updates: any) => void;
   playbackState: { currentTime: number; phase: any; isPlaying: boolean; duration: number };
 }
-
-const controlPanelSyncClient = new BroadcastChannel('karaoke-sync');
 
 export default function ControlPanel({
   user,
@@ -115,7 +114,7 @@ export default function ControlPanel({
   const saveQueue = (newQueue: SongQueueItem[]) => {
     setQueue(newQueue);
     localStorage.setItem('karaoke_queue', JSON.stringify(newQueue));
-    controlPanelSyncClient.postMessage({ type: 'QUEUE_SYNC', payload: newQueue });
+    sendSyncMessage({ type: 'QUEUE_SYNC', payload: newQueue });
   };
 
   const clearQueue = () => {
@@ -352,7 +351,7 @@ export default function ControlPanel({
   const handleShutdown = () => {
     if (window.confirm("ARE YOU SURE? This will shut down the entire Praise Studio system and close all projection windows.")) {
        // 1. Signal everyone else first using a stable channel send
-       controlPanelSyncClient.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+       sendSyncMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
        
        // 2. Clear local session data
        localStorage.removeItem('karaoke_queue');
@@ -379,7 +378,7 @@ export default function ControlPanel({
   };
 
   return (
-    <div className="w-[380px] h-full glass-panel border-l-0 rounded-none border-y-0 flex flex-col overflow-hidden">
+    <div className="no-drag w-[380px] h-full glass-panel border-l-0 rounded-none border-y-0 flex flex-col overflow-hidden">
       <div className="p-6 border-bottom border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-brand-gold/10 rounded-xl flex items-center justify-center text-brand-gold border border-brand-gold/20">
@@ -1031,23 +1030,41 @@ export default function ControlPanel({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <button 
-                    onClick={() => {
-                      if (window.electronAPI?.openProjection) {
-                        window.electronAPI.openProjection('prompter');
-                      } else {
-                        window.open(`${window.location.origin}${window.location.pathname}?view=prompter`, 'prompter', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080');
-                      }
-                    }}
-                    className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-black/50 border border-brand-gold/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <MonitorPlay size={20} className="text-white/70 group-hover:text-brand-gold" />
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-between gap-3 h-full">
+                    <div className="flex flex-col items-center gap-2">
+                       <div className="w-10 h-10 rounded-full bg-black/50 border border-brand-gold/20 flex items-center justify-center">
+                         <MonitorPlay size={18} className="text-white/70" />
+                       </div>
+                       <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight text-center">Prompter <br />Output</h4>
                     </div>
-                    <div>
-                      <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight">Prompter <br />Window</h4>
-                    </div>
-                  </button>
+
+                    {window.electronAPI?.openProjector ? (
+                      <div className="w-full flex gap-1">
+                        <button 
+                          onClick={() => window.electronAPI!.openProjector({ type: 'prompter', monitor: 1, name: 'Prompter Fullscreen' })}
+                          className="flex-1 py-1.5 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold text-[9px] font-bold tracking-wider rounded border border-brand-gold/20 transition-colors"
+                          title="Takes over an external display automatically"
+                        >
+                          FULLSCREEN
+                        </button>
+                        <button 
+                          onClick={() => window.electronAPI!.openProjector({ type: 'prompter', monitor: -1, name: 'Prompter Windowed' })}
+                          className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-[9px] font-bold tracking-wider rounded border border-white/10 transition-colors"
+                          title="Opens as a standard frameless window"
+                        >
+                          WINDOWED
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=prompter`, 'prompter', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                        className="w-full py-2 bg-brand-gold/10 hover:bg-brand-gold/20 text-brand-gold text-[9px] font-bold tracking-wider rounded border border-brand-gold/20 transition-colors"
+                      >
+                        OPEN POPUP
+                      </button>
+                    )}
+                  </div>
+                  
                   <button 
                     onClick={(e) => {
                       const url = `${window.location.origin}${window.location.pathname}?view=prompter`;
@@ -1062,23 +1079,40 @@ export default function ControlPanel({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <button 
-                    onClick={() => {
-                      if (window.electronAPI?.openProjection) {
-                        window.electronAPI.openProjection('visuals');
-                      } else {
-                        window.open(`${window.location.origin}${window.location.pathname}?view=visuals`, 'visuals', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080');
-                      }
-                    }}
-                    className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-brand-gold/50 hover:bg-white/10 transition-all text-center group h-full"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-black/50 border border-[#ff0055]/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <ExternalLink size={20} className="text-white/70 group-hover:text-[#ff0055]" />
+                  <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-between gap-3 h-full">
+                    <div className="flex flex-col items-center gap-2">
+                       <div className="w-10 h-10 rounded-full bg-black/50 border border-[#ff0055]/30 flex items-center justify-center">
+                         <ExternalLink size={18} className="text-white/70" />
+                       </div>
+                       <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight text-center">Visuals <br />Output</h4>
                     </div>
-                    <div>
-                      <h4 className="text-[12px] font-bold text-white uppercase tracking-wider leading-tight">Visuals <br />Output</h4>
-                    </div>
-                  </button>
+
+                    {window.electronAPI?.openProjector ? (
+                      <div className="w-full flex gap-1">
+                        <button 
+                          onClick={() => window.electronAPI!.openProjector({ type: 'visuals', monitor: 1, name: 'Visual Output Fullscreen' })}
+                          className="flex-1 py-1.5 bg-[#ff0055]/10 hover:bg-[#ff0055]/20 text-[#ff0055] text-[9px] font-bold tracking-wider rounded border border-[#ff0055]/20 transition-colors"
+                          title="Takes over an external display automatically"
+                        >
+                          FULLSCREEN
+                        </button>
+                        <button 
+                          onClick={() => window.electronAPI!.openProjector({ type: 'visuals', monitor: -1, name: 'Visual Output Windowed' })}
+                          className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-[9px] font-bold tracking-wider rounded border border-white/10 transition-colors"
+                          title="Opens as a standard frameless window"
+                        >
+                          WINDOWED
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=visuals`, 'visuals', 'menubar=no,toolbar=no,location=no,status=no,width=1920,height=1080')}
+                        className="w-full py-2 bg-[#ff0055]/10 hover:bg-[#ff0055]/20 text-[#ff0055] text-[9px] font-bold tracking-wider rounded border border-[#ff0055]/20 transition-colors"
+                      >
+                        OPEN POPUP
+                      </button>
+                    )}
+                  </div>
                   <button 
                     onClick={(e) => {
                       const url = `${window.location.origin}${window.location.pathname}?view=visuals`;

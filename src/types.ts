@@ -68,12 +68,19 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   mediaVolume: 1.0
 };
 
+export interface OBSProjectorConfig {
+  type: 'prompter' | 'visuals' | 'multiview';
+  monitor: number; // -1 for Windowed, 0 for Primary, 1+ for other specific external displays
+  name?: string;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
-      openProjection: (viewType: 'visuals' | 'prompter') => void;
+      openProjector: (config: OBSProjectorConfig) => void;
       send: (channel: string, data: any) => void;
       receive: (channel: string, func: (...args: any[]) => void) => void;
+      removeListener: (channel: string, func: (...args: any[]) => void) => void;
       exitApp: () => void;
     };
   }

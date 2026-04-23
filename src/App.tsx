@@ -115,25 +115,25 @@ export default function App() {
 
   // Unified BroadcastChannel and Exit Safety
   useEffect(() => {
-    const bc = new BroadcastChannel('karaoke-sync');
-
     // Heartbeat mechanism (Operator Only)
     let heartbeatInterval: NodeJS.Timeout | null = null;
     if (settings.viewType === 'operator') {
       heartbeatInterval = setInterval(() => {
         // Sync vital states to all duplicators
-        bc.postMessage({ 
-          type: 'COMMAND', 
-          payload: { 
-            action: 'SYNC_STATE', 
-            state: { 
-              ...sessionRef.current,
-              phase: playbackStateRef.current.phase,
-              isPlaying: playbackStateRef.current.isPlaying,
-              currentTime: playbackStateRef.current.currentTime,
-              duration: playbackStateRef.current.duration
+        import('./lib/syncChannel').then(({ sendSyncMessage }) => {
+          sendSyncMessage({ 
+            type: 'COMMAND', 
+            payload: { 
+              action: 'SYNC_STATE', 
+              state: { 
+                ...sessionRef.current,
+                phase: playbackStateRef.current.phase,
+                isPlaying: playbackStateRef.current.isPlaying,
+                currentTime: playbackStateRef.current.currentTime,
+                duration: playbackStateRef.current.duration
+              } 
             } 
-          } 
+          });
         });
       }, 1000);
     }
@@ -141,7 +141,9 @@ export default function App() {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (settings.viewType === 'operator') {
         // Signal immediate shutdown to others
-        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        import('./lib/syncChannel').then(({ sendSyncMessage }) => {
+          sendSyncMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        });
         
         const msg = "Are you sure? This will terminate the Praise session.";
         e.preventDefault();
@@ -152,60 +154,63 @@ export default function App() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    bc.onmessage = (event) => {
-      const { type, payload } = event.data;
-      if (settings.viewType === 'operator') return; // Operator is master
-
-      if (type === 'COMMAND') {
-        switch (payload.action) {
-          case 'APP_EXIT':
-            // Total Shutdown Hook
-            console.log("Shutting down view:", settings.viewType);
-            if (window.electronAPI?.exitApp) {
-               window.electronAPI.exitApp();
-            }
-            window.close();
-            // Fallback for browser tabs: clear and navigate away
-            setSession({
-               bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
-               isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
-            });
-            setTimeout(() => {
-               window.location.href = 'about:blank';
-            }, 100);
-            break;
-
-          case 'SYNC_STATE':
-            const { state } = payload;
-            // Immediate mirroring for Prompter/Visuals
-            setSession(prev => {
-              const hasActualChange = state.mediaUrl !== prev.mediaUrl || state.lyrics.length !== prev.lyrics.length;
-              if (!hasActualChange) return prev;
-              return { ...prev, ...state };
-            });
-
-            setPlaybackState(prev => {
-               const dt = Math.abs(prev.currentTime - state.currentTime);
-               // Force sync if drifts or if state changed (Play/Pause)
-               if (prev.isPlaying !== state.isPlaying || prev.phase !== state.phase || dt > 2) {
-                 return { ...prev, ...state };
+    let cleanupSync: () => void = () => {};
+    import('./lib/syncChannel').then(({ subscribeSyncMessages }) => {
+      cleanupSync = subscribeSyncMessages((data) => {
+        const { type, payload } = data;
+        if (settings.viewType === 'operator') return; // Operator is master
+  
+        if (type === 'COMMAND') {
+          switch (payload.action) {
+            case 'APP_EXIT':
+              // Total Shutdown Hook
+              console.log("Shutting down view:", settings.viewType);
+              if (window.electronAPI?.exitApp) {
+                 window.electronAPI.exitApp();
+              }
+              window.close();
+              // Fallback for browser tabs: clear and navigate away
+              setSession({
+                 bumperInUrl: null, bumperOutUrl: null, mediaUrl: null, backgroundUrl: null,
+                 isAudioOnly: false, lyrics: [], bpm: null, musicalKey: null, duration: 0
+              });
+              setTimeout(() => {
+                 window.location.href = 'about:blank';
+              }, 100);
+              break;
+  
+            case 'SYNC_STATE':
+              const { state } = payload;
+              // Immediate mirroring for Prompter/Visuals
+              setSession(prev => {
+                const hasActualChange = state.mediaUrl !== prev.mediaUrl || state.lyrics.length !== prev.lyrics.length;
+                if (!hasActualChange) return prev;
+                return { ...prev, ...state };
+              });
+  
+              setPlaybackState(prev => {
+                 const dt = Math.abs(prev.currentTime - state.currentTime);
+                 // Force sync if drifts or if state changed (Play/Pause)
+                 if (prev.isPlaying !== state.isPlaying || prev.phase !== state.phase || dt > 2) {
+                   return { ...prev, ...state };
+                 }
+                 return prev;
+              });
+              break;
+  
+             case 'QUEUE_SYNC':
+               // Mirror the queue for late joiners or side-view reference
+               if (payload.data || payload) {
+                  const dataQ = payload.data || payload;
+                  // Since queue is local to ControlPanel, we don't necessarily 
+                  // need it in App state, but we log for sync audit
+                  console.log("Broadcast: Queue Synchronized across views", dataQ.length);
                }
-               return prev;
-            });
-            break;
-
-           case 'QUEUE_SYNC':
-             // Mirror the queue for late joiners or side-view reference
-             if (payload.data || payload) {
-                const data = payload.data || payload;
-                // Since queue is local to ControlPanel, we don't necessarily 
-                // need it in App state, but we log for sync audit
-                console.log("Broadcast: Queue Synchronized across views", data.length);
-             }
-             break;
+               break;
+          }
         }
-      }
-    };
+      });
+    });
 
     // Clean Start sequence for Operator
     if (settings.viewType === 'operator') {
@@ -219,7 +224,7 @@ export default function App() {
     return () => {
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      bc.close();
+      cleanupSync();
     };
   }, [settings.viewType]);
 

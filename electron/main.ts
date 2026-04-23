@@ -1,6 +1,33 @@
 import { app, BrowserWindow, screen } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import isDev from 'electron-is-dev';
+
+// Geometry Persistence mimicking OBS
+function getProjectorGeometry(viewType: string) {
+  try {
+    const stateFile = path.join(app.getPath('userData'), `obs-projector-${viewType}.dat`);
+    if (fs.existsSync(stateFile)) {
+      const b64Data = fs.readFileSync(stateFile, 'utf8');
+      const jsonStr = Buffer.from(b64Data, 'base64').toString('utf8');
+      return JSON.parse(jsonStr);
+    }
+  } catch (e) {
+    console.error("Failed to read projector geometry:", e);
+  }
+  return null;
+}
+
+function saveProjectorGeometry(viewType: string, bounds: Electron.Rectangle) {
+  try {
+    const stateFile = path.join(app.getPath('userData'), `obs-projector-${viewType}.dat`);
+    const jsonStr = JSON.stringify(bounds);
+    const b64Data = Buffer.from(jsonStr, 'utf8').toString('base64');
+    fs.writeFileSync(stateFile, b64Data);
+  } catch (e) {
+    console.error("Failed to save projector geometry:", e);
+  }
+}
 
 // Fallback for __dirname depending on the build environment
 const currentDir = typeof __dirname !== 'undefined' 
@@ -67,34 +94,87 @@ function createWindow() {
 // IPC Handling for Projection Mode
 import { ipcMain } from 'electron';
 
-ipcMain.on('open-projection', (event, viewType: string) => {
+ipcMain.on('open-projector', (event, config: { type: string, monitor: number, name?: string }) => {
+  const { type, monitor, name } = config;
   const displays = screen.getAllDisplays();
-  const externalDisplay = displays.find((display) => {
-    return display.bounds.x !== 0 || display.bounds.y !== 0;
-  });
+  
+  const isWindowed = monitor === -1;
+  
+  // Find the requested display. OBS uses 0 for primary, 1+ for others.
+  let targetDisplay = displays[0];
+  if (!isWindowed) {
+    if (monitor >= 0 && monitor < displays.length) {
+      targetDisplay = displays[monitor];
+    } else {
+      // Fallback: try to find any external display
+      targetDisplay = displays.find((display) => display.bounds.x !== 0 || display.bounds.y !== 0) || displays[0];
+    }
+  }
 
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 720,
-    title: `ProKaraoke - ${viewType.toUpperCase()}`,
+  const windowTitle = `ProKaraoke Projector - ${name || type.toUpperCase()}`;
+  
+  let windowConfig: Electron.BrowserWindowConstructorOptions = {
+    width: targetDisplay.bounds.width,
+    height: targetDisplay.bounds.height,
+    x: targetDisplay.bounds.x,
+    y: targetDisplay.bounds.y,
+    title: windowTitle,
     backgroundColor: '#000000',
+    frame: !isWindowed,
+    autoHideMenuBar: true,
+    alwaysOnTop: isWindowed, // Windowed projectors commonly stay on top
+    fullscreen: !isWindowed, // Force full screen if not windowed
     webPreferences: {
       preload: path.join(currentDir, 'preload.cjs'),
       contextIsolation: true,
+      backgroundThrottling: false, // Ensures GPU pipeline doesn't stall when unfocused
     },
-  });
+  };
 
-  if (externalDisplay) {
-    win.setBounds(externalDisplay.bounds);
+  if (isWindowed) {
+    const savedGeometry = getProjectorGeometry(type);
+    if (savedGeometry) {
+       windowConfig.x = savedGeometry.x;
+       windowConfig.y = savedGeometry.y;
+       windowConfig.width = savedGeometry.width;
+       windowConfig.height = savedGeometry.height;
+    } else {
+       // Default windowed size
+       windowConfig.width = 1280;
+       windowConfig.height = 720;
+       windowConfig.x = targetDisplay.bounds.x + 50;
+       windowConfig.y = targetDisplay.bounds.y + 50;
+    }
+  }
+
+  const win = new BrowserWindow(windowConfig);
+
+  if (!isWindowed) {
     win.setFullScreen(true);
+    win.setMenuBarVisibility(false);
+  } else {
+    // Save geometry on move and resize for windowed projectors
+    const saveState = () => saveProjectorGeometry(type, win.getBounds());
+    win.on('moved', saveState);
+    win.on('resized', saveState);
   }
 
   const url = isDev 
-    ? `http://localhost:3000?view=${viewType}` 
-    : `file://${path.join(currentDir, '../dist/index.html')}?view=${viewType}`;
+    ? `http://localhost:3000?view=${type}` 
+    : `file://${path.join(currentDir, '../dist/index.html')}?view=${type}`;
   
   win.loadURL(url);
   win.webContents.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+});
+
+// Inter-window communication router (Replaces BroadcastChannel)
+ipcMain.on('karaoke-sync-out', (event, data) => {
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach(w => {
+    if (w.webContents !== event.sender) {
+      w.webContents.send('karaoke-sync-in', data);
+    }
+  });
 });
 
 ipcMain.on('app-exit', () => {

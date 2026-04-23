@@ -11,6 +11,14 @@
 @layer base {
   body {
     @apply bg-brand-dark text-white font-sans overflow-hidden;
+    /* Allow moving the borderless Electron window by dragging the background */
+    -webkit-app-region: drag;
+  }
+}
+
+@layer utilities {
+  .no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 
