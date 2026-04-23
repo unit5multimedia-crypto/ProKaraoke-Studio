@@ -602,8 +602,8 @@ export default function KaraokeStage({
               ) : (
                 <VisualBackground 
                   fftData={fftData} 
-                  theme={settings.visualTheme || settings.theme} 
-                  sensitivity={settings.audioReactivity || settings.visualizerSensitivity} 
+                  theme={settings.visualTheme}
+                  sensitivity={settings.audioReactivity}
                 />
               )}
             </div>
