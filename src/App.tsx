@@ -9,7 +9,7 @@ import KaraokeStage from './components/KaraokeStage';
 import ControlPanel from './components/ControlPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { parseLyrics } from './lib/lyricParser';
-import { Mic, Music, Layout, Settings, Timer } from 'lucide-react';
+import { Mic, Music, Layout, Settings, Timer, Power } from 'lucide-react';
 import { auth, db, User, validateConnection, signInWithGoogle } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
@@ -260,13 +260,19 @@ export default function App() {
     return () => unsubscribeSession();
   }, [user]);
 
-  const updateSessionOnCloud = useCallback(async (updates: Partial<KaraokeSession & { isPlaying: boolean }>) => {
+  const updateSessionOnCloud = useCallback(async (updates: Partial<KaraokeSession & { isPlaying: boolean; score?: number; phase?: string; currentTime?: number }>) => {
     if (!user) return;
     const sessionDocRef = doc(db, 'users', user.uid, 'sessions', 'current');
     
+    // Filter out undefined values to prevent Firebase "invalid data" errors
+    const cleanUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+      if (value !== undefined) acc[key] = value;
+      return acc;
+    }, {} as any);
+
     try {
       await setDoc(sessionDocRef, {
-        ...updates,
+        ...cleanUpdates,
         updatedAt: serverTimestamp()
       }, { merge: true });
     } catch (e) {
@@ -412,6 +418,20 @@ export default function App() {
                 className="w-full h-12 bg-brand-gold text-black font-black text-sm rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-lg shadow-brand-gold/10"
               >
                 <Music size={18} /> INITIALIZE STUDIO ACCESS
+              </button>
+
+              <button 
+                onClick={() => {
+                  if (window.electronAPI?.exitApp) {
+                     window.electronAPI.exitApp();
+                  } else {
+                     try { window.close(); } catch(e) {}
+                     window.location.href = 'about:blank';
+                  }
+                }}
+                className="w-full h-10 bg-red-500/10 text-red-500 font-bold text-xs rounded-xl hover:bg-red-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-red-500/20"
+              >
+                <Power size={14} /> EXIT SYSTEM
               </button>
            </div>
            
