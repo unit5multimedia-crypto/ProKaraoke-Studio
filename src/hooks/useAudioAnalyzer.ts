@@ -4,36 +4,54 @@ export function useAudioAnalyzer(isActive: boolean) {
   const [data, setData] = useState<Uint8Array>(new Uint8Array(0));
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | MediaStreamAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const initAnalyzer = (element: HTMLMediaElement | null) => {
-    if (!element) return;
-    // If already connected to THIS element, skip
-    if (sourceRef.current && (sourceRef.current as any).mediaElement === element) return;
-    
-    // Safety check for valid media element
-    if (!(element instanceof HTMLMediaElement)) return;
-
+  const initAnalyzer = async (element: HTMLMediaElement | null, useMic: boolean = false) => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
 
-    const ctx = audioContextRef.current || new AudioContextClass();
-    
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextClass();
+    }
+    const ctx = audioContextRef.current;
+
+    if (!analyserRef.current) {
+      analyserRef.current = ctx.createAnalyser();
+      analyserRef.current.fftSize = 256;
+    }
+    const analyser = analyserRef.current;
+
+    // Disconnect old source
     if (sourceRef.current) {
       try { sourceRef.current.disconnect(); } catch(e) {}
     }
 
-    const analyser = analyserRef.current || ctx.createAnalyser();
-    analyser.fftSize = 256;
-    
-    const source = ctx.createMediaElementSource(element);
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-
-    audioContextRef.current = ctx;
-    analyserRef.current = analyser;
-    sourceRef.current = source;
+    if (useMic) {
+      try {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        const micSource = ctx.createMediaStreamSource(stream);
+        micSource.connect(analyser);
+        sourceRef.current = micSource;
+      } catch (e) {
+        console.error("Mic access denied for analyzer", e);
+      }
+    } else if (element && element instanceof HTMLMediaElement) {
+      try {
+        const mediaSource = ctx.createMediaElementSource(element);
+        mediaSource.connect(analyser);
+        analyser.connect(ctx.destination);
+        sourceRef.current = mediaSource;
+      } catch (e) {
+        console.warn("CORS/Security restricted element capture, falling back to mic", e);
+        initAnalyzer(null, true);
+      }
+    }
   };
 
   useEffect(() => {

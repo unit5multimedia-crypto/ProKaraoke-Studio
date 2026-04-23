@@ -65,6 +65,15 @@ export default function KaraokeStage({
   const ytPlayerRef = useRef<any>(null);
   const [ytReady, setYtReady] = useState(false);
   const isOperator = settings.viewType === 'operator';
+
+  const youtubeId = useMemo(() => {
+    if (!mediaUrl) return null;
+    const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = mediaUrl.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  }, [mediaUrl]);
+  
+  const isYouTube = !!youtubeId;
   
   const { pitch } = useVocalEngine(
     isOperator && phase === 'main' && isPlaying, 
@@ -85,12 +94,28 @@ export default function KaraokeStage({
     }
   }, [settings.audioOutputId, phase]);
 
-  // Connect analyzer when media ready
+  // Connect analyzer based on view and media type
   useEffect(() => {
-    if (mainRef.current) {
-      initAnalyzer(mainRef.current);
-    }
-  }, [mainRef.current, mediaUrl]);
+    const setupAnalyzer = async () => {
+      if (phase !== 'main') return;
+
+      // In visuals view, we prefer the mic because the media is muted locally
+      if (settings.viewType === 'visuals') {
+        await initAnalyzer(null, true);
+        return;
+      }
+
+      // In operator view or prompter, try capturing the element first
+      if (isYouTube) {
+        // YouTube iframes cannot be captured, so we use the mic to "hear" the room
+        await initAnalyzer(null, true);
+      } else if (mainRef.current) {
+        await initAnalyzer(mainRef.current as HTMLMediaElement, false);
+      }
+    };
+
+    setupAnalyzer();
+  }, [phase, isYouTube, mainRef.current, settings.viewType]);
 
   // Sound FX System (No assets needed, using Oscillator)
   const playSFX = (type: 'win' | 'score' | 'start') => {
@@ -155,15 +180,6 @@ export default function KaraokeStage({
       console.error('AudioContext Error', e);
     }
   };
-
-  const youtubeId = useMemo(() => {
-    if (!mediaUrl) return null;
-    const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-    const match = mediaUrl.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  }, [mediaUrl]);
-  
-  const isYouTube = !!youtubeId;
 
   // Sync playback state with refs
   useEffect(() => {
@@ -554,6 +570,12 @@ export default function KaraokeStage({
     <div 
       className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden transition-colors duration-1000"
       style={{ backgroundColor: settings.viewType === 'prompter' ? settings.prompterBgColor : '#000000' }}
+      onClick={() => {
+        // Subtle activation for Visual View mic capture on first click
+        if (settings.viewType === 'visuals' && phase === 'main') {
+          initAnalyzer(null, true);
+        }
+      }}
     >
       {/* Rescue Link for Operators stuck in Singer View */}
       {settings.viewType === 'operator' && phase === 'idle' && (
@@ -931,6 +953,13 @@ export default function KaraokeStage({
             </div>
           </motion.div>
         )}
+        {settings.viewType === 'visuals' && (
+          <div className="absolute top-8 right-8 z-[100] flex items-center gap-2 opacity-5 scale-50 hover:opacity-100 hover:scale-100 transition-all">
+             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+             <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Visual Feed Ready</span>
+          </div>
+        )}
+
       </AnimatePresence>
     </div>
   );
