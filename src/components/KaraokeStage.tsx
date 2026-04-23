@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LyricLine, KaraokeSettings, SongQueueItem, ViewType } from '../types';
-import { usePitchDetection } from '../hooks/usePitchDetection';
+import { useVocalEngine } from '../hooks/usePitchDetection';
 import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
 import { VisualBackground } from './VisualBackground';
 import { Mic, Music, Play, Pause, RotateCcw, Award, Trophy, ListMusic } from 'lucide-react';
@@ -64,7 +64,16 @@ export default function KaraokeStage({
   const ytContainerRef = useRef<HTMLDivElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const [ytReady, setYtReady] = useState(false);
-  const pitch = usePitchDetection(phase === 'main' && isPlaying, settings.audioDeviceId);
+  const isOperator = settings.viewType === 'operator';
+  
+  const { pitch } = useVocalEngine(
+    isOperator && phase === 'main' && isPlaying, 
+    settings.audioDeviceId, 
+    settings.micOutputId || settings.audioOutputId,
+    settings.micVolume ?? 0.8,
+    settings.micEcho ?? 0.3
+  );
+  
   const { data: fftData, initAnalyzer } = useAudioAnalyzer(isPlaying && phase === 'main');
 
   // Handle setting audio output device
@@ -383,97 +392,6 @@ export default function KaraokeStage({
     };
   }, [settings.viewType, bumperUrl, mediaUrl]);
 
-  // Refined YouTube initialization with interval check for YT global
-  useEffect(() => {
-    if (!isYouTube || !youtubeId || phase !== 'main') {
-      setYtReady(false);
-      if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); ytPlayerRef.current = null; } catch(e) {}
-      }
-      return;
-    }
-
-    setYtReady(false);
-    let initAttempts = 0;
-    const maxAttempts = 20;
-
-    const tryInit = () => {
-      const container = ytContainerRef.current;
-      if (!container) return false;
-
-      if (window.YT && window.YT.Player) {
-        if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
-          try { ytPlayerRef.current.destroy(); } catch(e) {}
-        }
-        
-        ytPlayerRef.current = new window.YT.Player(container, {
-          videoId: youtubeId,
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            modestbranding: 1,
-            rel: 0,
-            iv_load_policy: 3,
-            enablejsapi: 1,
-            autohide: 1,
-            playsinline: 1,
-            vq: 'hd1080', // Force HD1080 immediately
-            origin: window.location.origin
-          },
-          events: {
-            onReady: (event: any) => {
-              try {
-                console.log('YouTube Player Ready');
-                setYtReady(true);
-                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080');
-                if (event.target.playVideo) event.target.playVideo();
-                if (event.target.unMute) event.target.unMute();
-                showFeedback("Vocal Engine", "Ready");
-              } catch (e) {
-                console.error("YouTube onReady error:", e);
-              }
-            },
-            onStateChange: (event: any) => {
-              if (event.data === window.YT.PlayerState.PLAYING) {
-                if (event.target.setPlaybackQuality) event.target.setPlaybackQuality('hd1080'); // Re-assert if quality drops
-                setIsPlaying(true);
-              } else if (event.data === window.YT.PlayerState.PAUSED) {
-                setIsPlaying(false);
-              } else if (event.data === window.YT.PlayerState.ENDED) {
-                handleMediaEnd();
-              }
-            },
-            onError: (event: any) => {
-              console.error('YouTube Player Error:', event.data);
-              let msg = "Video Error";
-              if (event.data === 101 || event.data === 150) msg = "Embed Restricted";
-              if (event.data === 100) msg = "Video Not Found";
-              showFeedback("Error", msg);
-            }
-          }
-        });
-        return true;
-      }
-      return false;
-    };
-
-    const interval = setInterval(() => {
-      if (tryInit() || initAttempts >= maxAttempts) {
-        clearInterval(interval);
-      }
-      initAttempts++;
-    }, 500);
-
-    return () => {
-      clearInterval(interval);
-      if (ytPlayerRef.current && ytPlayerRef.current.destroy) {
-        try { ytPlayerRef.current.destroy(); } catch(e) {}
-      }
-    };
-  }, [youtubeId,  phase]);
-
   const togglePlayback = () => {
     const newState = !isPlaying;
     setIsPlaying(newState);
@@ -619,44 +537,14 @@ export default function KaraokeStage({
             </div>
 
             {/* Media Player Layer */}
-            {(isYouTube && youtubeId) ? (
-              <div className="absolute inset-0 overflow-hidden z-20 bg-black pointer-events-none">
-                <div 
-                  ref={ytContainerRef}
-                  className={`w-full h-full object-cover transition-all duration-1000 ${settings.viewType !== 'operator' ? 'opacity-80 scale-[1.05]' : 'opacity-100'} pointer-events-auto`}
-                />
-                
-                {/* Interaction Shield - Transparent overlay for Videoke look */}
-                <div className="absolute inset-0 z-25 bg-transparent" />
-
-                {/* Autoplay Rescue: Big invisible overlay that triggers play on first click */}
-                {ytReady && !isPlaying && (
-                  <div 
-                    className="absolute inset-0 z-30 cursor-pointer flex items-center justify-center bg-black/40"
-                    onClick={() => {
-                      try {
-                        ytPlayerRef.current?.unMute();
-                        ytPlayerRef.current?.playVideo();
-                        setIsPlaying(true);
-                      } catch(e) {}
-                    }}
-                  >
-                    <div className="text-center">
-                      <div className="w-24 h-24 bg-brand-gold text-black rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,215,0,0.5)] mb-4 mx-auto animate-bounce">
-                        <Play size={48} fill="currentColor" className="ml-2" />
-                      </div>
-                      <p className="font-display font-black text-brand-gold text-2xl uppercase tracking-tighter">Click to Start the Show</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : mediaUrl ? (
+            {mediaUrl ? (
               isAudioOnly ? (
                 <audio
                   ref={mainRef as any}
                   src={mediaUrl}
                   autoPlay
                   playsInline
+                  muted={!isOperator}
                   crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
@@ -668,10 +556,11 @@ export default function KaraokeStage({
                   src={mediaUrl}
                   autoPlay
                   playsInline
+                  muted={!isOperator}
                   crossOrigin="anonymous"
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={handleMediaEnd}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover pointer-events-none"
                 />
               )
             ) : null}

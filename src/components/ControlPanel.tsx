@@ -8,6 +8,37 @@ import { listDriveFiles, getFileContent, getDriveDownloadUrl, DriveFile } from '
 import { auth, signInWithGoogle, User } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 
+const MicLevelMeter = () => {
+  const barRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    let raf: number;
+    const loop = () => {
+      const analyser = (window as any).karaokeMicAnalyser;
+      if (analyser && barRef.current) {
+        const data = new Float32Array(analyser.fftSize);
+        analyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for(let i=0; i<data.length; i++) sum += data[i]*data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const percent = Math.min(100, rms * 500); // Scale RMS mapped visually
+        barRef.current.style.width = `${percent}%`;
+        barRef.current.style.backgroundColor = percent > 80 ? '#ef4444' : '#22c55e';
+      } else if (barRef.current) {
+        barRef.current.style.width = '0%';
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden flex border border-white/5">
+      <div ref={barRef} className="h-full bg-green-500 w-0 transition-all duration-75 ease-linear" />
+    </div>
+  );
+};
+
 interface ControlPanelProps {
   user: User | null;
   userAuth: { accessToken: string; expiry: number } | null;
@@ -812,11 +843,13 @@ export default function ControlPanel({
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="col-span-2 space-y-2 mb-2 p-3 bg-black/40 rounded-xl border border-white/10">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[9px] uppercase tracking-widest text-white/40">Mic Input</label>
+                    <label className="flex justify-between items-center text-[9px] uppercase tracking-widest text-white/40">
+                      <span>Mic Input</span>
+                    </label>
                     <select
                       value={settings.audioDeviceId || ''}
                       onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
-                      className="w-full h-8 bg-white/5 border border-white/10 rounded overflow-hidden text-[10px] px-2 outline-none"
+                      className="w-full h-8 bg-white/5 border border-white/10 rounded overflow-hidden text-[10px] px-2 outline-none mb-1"
                       onClick={async (e) => {
                         const target = e.currentTarget;
                         if (target.options.length <= 1) {
@@ -839,9 +872,35 @@ export default function ControlPanel({
                       <option value="">Default System Mic</option>
                       {settings.audioDeviceId && <option value={settings.audioDeviceId}>Selected Audio Input</option>}
                     </select>
+                    <MicLevelMeter />
                   </div>
                   
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-4 px-1 py-2">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="flex justify-between text-[8px] font-mono text-brand-gold">
+                        <span>MIC VOL</span><span>{Math.round((settings.micVolume ?? 0.8) * 100)}%</span>
+                      </label>
+                      <input 
+                        type="range" min="0" max="1" step="0.05" 
+                        value={settings.micVolume ?? 0.8} 
+                        onChange={(e) => updateSetting('micVolume', parseFloat(e.target.value))} 
+                        className="w-full h-1 accent-brand-gold" 
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="flex justify-between text-[8px] font-mono text-green-400">
+                        <span>ECHO FX</span><span>{Math.round((settings.micEcho ?? 0.3) * 100)}%</span>
+                      </label>
+                      <input 
+                        type="range" min="0" max="1" step="0.05" 
+                        value={settings.micEcho ?? 0.3} 
+                        onChange={(e) => updateSetting('micEcho', parseFloat(e.target.value))} 
+                        className="w-full h-1 accent-green-400" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
                     <label className="text-[9px] uppercase tracking-widest text-white/40">Playback Output</label>
                     <select
                       value={settings.audioOutputId || ''}

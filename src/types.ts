@@ -19,8 +19,11 @@ export interface KaraokeSettings {
   prompterBgColor: string; // e.g., '#000000', '#00ff00' for green screen
   visualTheme: string; // shadertoy theme name
   audioReactivity: number; // sensitivity 0 to 1
-  audioDeviceId?: string;
-  audioOutputId?: string;
+  audioDeviceId?: string; // input mic
+  audioOutputId?: string; // media output
+  micOutputId?: string;   // mic specific output
+  micVolume?: number;     // 0.0 to 1.0
+  micEcho?: number;       // 0.0 to 1.0
 }
 
 export interface SongQueueItem {
@@ -57,6 +60,8 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   prompterBgColor: '#000000',
   visualTheme: 'vibrant_nebula',
   audioReactivity: 0.5,
+  micVolume: 0.8,
+  micEcho: 0.3
 };
 
 declare global {

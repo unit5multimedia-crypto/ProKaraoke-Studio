@@ -1,68 +1,109 @@
 import { useState, useEffect, useRef } from 'react';
 import { detectPitch } from '../lib/pitchDetection';
 
-export function usePitchDetection(isActive: boolean, deviceId?: string) {
+export function useVocalEngine(
+  isActive: boolean,
+  deviceId?: string,
+  outputId?: string,
+  volume: number = 0.8,
+  echo: number = 0.3
+) {
   const [pitch, setPitch] = useState<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const requestRef = useRef<number | null>(null);
+  const engineRef = useRef<any>(null);
 
   useEffect(() => {
     if (!isActive) {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-      return;
+       if (engineRef.current && engineRef.current.stream) {
+         engineRef.current.stream.getTracks().forEach((t: any) => t.stop());
+       }
+       if (engineRef.current && engineRef.current.actx) {
+         if (engineRef.current.actx.state !== 'closed') engineRef.current.actx.close();
+       }
+       engineRef.current = null;
+       (window as any).karaokeMicAnalyser = null;
+       return;
     }
 
-    async function setupAudio() {
+    let isMounted = true;
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const actx = new AudioContextClass();
+
+    const setup = async () => {
       try {
-        const constraints = {
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: deviceId ? { deviceId: { exact: deviceId } } : true
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        streamRef.current = stream;
+        });
 
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const audioContext = new AudioContextClass();
-        audioContextRef.current = audioContext;
+        if (outputId && typeof (actx as any).setSinkId === 'function') {
+          try { await (actx as any).setSinkId(outputId); } catch(e) { console.error("Sink ID error", e); }
+        }
 
-        const analyser = audioContext.createAnalyser();
+        const source = actx.createMediaStreamSource(stream);
+
+        const analyser = actx.createAnalyser();
         analyser.fftSize = 2048;
-        analyserRef.current = analyser;
+        (window as any).karaokeMicAnalyser = analyser;
 
-        const source = audioContext.createMediaStreamSource(stream);
-        source.connect(analyser);
+        const micGain = actx.createGain();
+        micGain.gain.value = volume;
 
-        const buffer = new Float32Array(analyser.fftSize);
+        // Classic Videoke Echo Loop
+        const delay = actx.createDelay(2.0); // max delay 2s
+        delay.delayTime.value = 0.25; // 250ms karaoke ping-pong
+        const delayFeedback = actx.createGain();
+        delayFeedback.gain.value = 0.4;
+        const echoGain = actx.createGain();
+        echoGain.gain.value = echo;
 
-        const updatePitch = () => {
-          analyser.getFloatTimeDomainData(buffer);
-          const p = detectPitch(buffer, audioContext.sampleRate);
+        // Route audio graph
+        source.connect(analyser); 
+        
+        source.connect(micGain);
+        micGain.connect(actx.destination);
+
+        source.connect(delay);
+        delay.connect(delayFeedback);
+        delayFeedback.connect(delay);
+        delay.connect(echoGain);
+        echoGain.connect(actx.destination);
+
+        const timeData = new Float32Array(analyser.fftSize);
+        const loop = () => {
+          if (!isMounted) return;
+          analyser.getFloatTimeDomainData(timeData);
+          const p = detectPitch(timeData, actx.sampleRate);
           setPitch(p);
-          requestRef.current = requestAnimationFrame(updatePitch);
+          requestAnimationFrame(loop);
         };
+        loop();
 
-        updatePitch();
-      } catch (err) {
-        console.error('Microphone access denied or error:', err);
-      }
-    }
-
-    setupAudio();
-
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+        engineRef.current = { actx, stream, micGain, echoGain };
+      } catch (e) {
+        console.error("Vocal engine setup failed. Check mic permissions.", e);
       }
     };
-  }, [isActive, deviceId]);
 
-  return pitch;
+    setup();
+
+    return () => {
+      isMounted = false;
+      (window as any).karaokeMicAnalyser = null;
+      if (engineRef.current) {
+        engineRef.current.stream.getTracks().forEach((t: any) => t.stop());
+        if (engineRef.current.actx.state !== 'closed') {
+           engineRef.current.actx.close();
+        }
+      }
+    };
+  }, [isActive, deviceId, outputId]); // effect manages lifecycle based on devices, volume/echo are real-time updated below
+
+  useEffect(() => {
+     if (engineRef.current) {
+        const { micGain, echoGain, actx } = engineRef.current;
+        if (micGain) micGain.gain.setTargetAtTime(volume, actx.currentTime, 0.05);
+        if (echoGain) echoGain.gain.setTargetAtTime(echo, actx.currentTime, 0.05);
+     }
+  }, [volume, echo]);
+
+  return { pitch };
 }
