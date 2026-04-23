@@ -69,45 +69,112 @@ export default function App() {
   // Broadcast Sync for offline/direct windows (Late joiners)
   useEffect(() => {
     const bc = new BroadcastChannel('karaoke-sync');
+
+    // Prevention of accidental closing and total session cleanup
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (settings.viewType === 'operator') {
+        const msg = "Are you sure you want to exit? The current praise session and all projection windows will be closed.";
+        e.preventDefault();
+        e.returnValue = msg;
+        
+        // Signal others to clean up
+        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+        return msg;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     bc.onmessage = (event) => {
       const { type, payload } = event.data;
       
       // If we are NOT the operator, handle sync state from operator
-      if (settings.viewType !== 'operator' && type === 'COMMAND' && payload.action === 'SYNC_STATE') {
-        const { state } = payload;
-        
-        // Only update session if media changed to avoid unnecessary re-renders/YouTube reloads
-        setSession(prev => {
-          const hasChanged = 
-            state.mediaUrl !== prev.mediaUrl || 
-            state.bumperInUrl !== prev.bumperInUrl ||
-            state.bumperOutUrl !== prev.bumperOutUrl;
-            
-          if (!hasChanged) return prev;
+      if (settings.viewType !== 'operator' && type === 'COMMAND') {
+        if (payload.action === 'APP_EXIT') {
+          // Force refresh on helper windows if operator leaves
+          setSession({
+            bumperInUrl: null,
+            bumperOutUrl: null,
+            mediaUrl: null,
+            backgroundUrl: null,
+            isAudioOnly: false,
+            lyrics: [],
+            bpm: null,
+            musicalKey: null,
+            duration: 0,
+          });
+          setPlaybackState({
+            currentTime: 0,
+            phase: 'idle',
+            isPlaying: false,
+            duration: 0
+          });
+          window.location.reload();
+          return;
+        }
 
-          return {
-            ...prev,
-            mediaUrl: state.mediaUrl || prev.mediaUrl,
-            bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
-            bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
-            lyrics: state.lyrics || prev.lyrics,
-            bpm: state.bpm || prev.bpm,
-            musicalKey: state.musicalKey || prev.musicalKey
-          };
-        });
-        
-        setPlaybackState(prev => {
-           if (prev.phase === state.phase && prev.isPlaying === state.isPlaying) return prev;
-           return {
+        if (payload.action === 'SYNC_STATE') {
+          const { state } = payload;
+          
+          // Only update session if media changed to avoid unnecessary re-renders/YouTube reloads
+          setSession(prev => {
+            const hasChanged = 
+              state.mediaUrl !== prev.mediaUrl || 
+              state.bumperInUrl !== prev.bumperInUrl ||
+              state.bumperOutUrl !== prev.bumperOutUrl;
+              
+            if (!hasChanged) return prev;
+
+            return {
               ...prev,
-              phase: state.phase,
-              isPlaying: state.isPlaying,
-              currentTime: state.currentTime,
-           };
-        });
+              mediaUrl: state.mediaUrl || prev.mediaUrl,
+              bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
+              bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
+              lyrics: state.lyrics || prev.lyrics,
+              bpm: state.bpm || prev.bpm,
+              musicalKey: state.musicalKey || prev.musicalKey
+            };
+          });
+          
+          setPlaybackState(prev => {
+             if (prev.phase === state.phase && prev.isPlaying === state.isPlaying && Math.abs(prev.currentTime - state.currentTime) < 2) return prev;
+             return {
+                ...prev,
+                phase: state.phase,
+                isPlaying: state.isPlaying,
+                currentTime: state.currentTime,
+             };
+          });
+        }
       }
     };
-    return () => bc.close();
+
+    // Clean start for Operator
+    if (settings.viewType === 'operator') {
+       // Reset local playback and session state on load for a clean start
+       setPlaybackState({
+         currentTime: 0,
+         phase: 'idle',
+         isPlaying: false,
+         duration: 0
+       });
+       setSession({
+          bumperInUrl: null,
+          bumperOutUrl: null,
+          mediaUrl: null,
+          backgroundUrl: null,
+          isAudioOnly: false,
+          lyrics: [],
+          bpm: null,
+          musicalKey: null,
+          duration: 0,
+       });
+    }
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      bc.close();
+    };
   }, [settings.viewType]);
 
   // Sync state from Firestore when logged in

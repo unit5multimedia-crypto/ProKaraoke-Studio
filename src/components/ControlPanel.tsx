@@ -118,6 +118,12 @@ export default function ControlPanel({
     bc.close();
   };
 
+  const clearQueue = () => {
+    if (window.confirm("Are you sure you want to clear the entire song queue? This will reset the playlist for all projection windows.")) {
+      saveQueue([]);
+    }
+  };
+
   const handleSearch = async () => {
     if (!searchQuery) return;
     setIsSearching(true);
@@ -403,7 +409,17 @@ export default function ControlPanel({
            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="input-label m-0 flex items-center gap-2 underline decoration-brand-gold/30">Playlist Queue</h3>
-                <span className="text-[10px] font-mono text-white/20">{queue.length} Tracks</span>
+                <div className="flex items-center gap-3">
+                  {queue.length > 0 && (
+                    <button 
+                      onClick={clearQueue}
+                      className="text-[9px] font-mono text-red-500/60 hover:text-red-400 flex items-center gap-1 uppercase tracking-tighter transition-colors"
+                    >
+                      <Trash2 size={10} /> Clear All
+                    </button>
+                  )}
+                  <span className="text-[10px] font-mono text-white/20">{queue.length} Tracks</span>
+                </div>
               </div>
               
               {queue.length === 0 ? (

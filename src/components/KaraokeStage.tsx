@@ -426,6 +426,14 @@ export default function KaraokeStage({
     // Session State Sync logic
     const bc = new BroadcastChannel('karaoke-sync');
     
+    // Safety: Handle window closing
+    const handleUnload = () => {
+      if (settings.viewType === 'operator') {
+        bc.postMessage({ type: 'COMMAND', payload: { action: 'APP_EXIT' } });
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+
     // If we are a helper window, request current state immediately
     if (settings.viewType !== 'operator') {
       bc.postMessage({ type: 'SYNC_REQUEST' });
@@ -461,15 +469,19 @@ export default function KaraokeStage({
       
       if (type === 'COMMAND') {
         switch (payload.action) {
+          case 'APP_EXIT':
+            // If the operator exits, reset helper windows to idle or self-destruct if possible
+            setPhase('idle');
+            setIsPlaying(false);
+            window.location.reload(); // Refresh to clean state
+            break;
           case 'SYNC_STATE':
-            // Only update local state if phase or isPlaying changed to avoid jitter
-            if (payload.state.phase !== phase) setPhase(payload.state.phase);
-            if (payload.state.isPlaying !== isPlaying) setIsPlaying(payload.state.isPlaying);
-            if (payload.state.score !== score) setScore(payload.state.score);
-            
-            // Sync time if significantly different or if just starting
-            if (Math.abs(payload.state.currentTime - currentTime) > 2) {
-                setCurrentTime(payload.state.currentTime);
+            // Update local state from operator
+            setPhase(payload.state.phase);
+            setIsPlaying(payload.state.isPlaying);
+            setScore(payload.state.score);
+            if (Math.abs(payload.state.currentTime - currentTime) > 3) {
+              setCurrentTime(payload.state.currentTime);
             }
             break;
           case 'START':
@@ -643,8 +655,15 @@ export default function KaraokeStage({
     <div 
       className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden transition-colors duration-1000"
       style={{ backgroundColor: settings.viewType === 'prompter' ? settings.prompterBgColor : '#000000' }}
-      onClick={() => {
-        // Subtle activation for Visual View mic capture on first click
+      onClick={async () => {
+        // Automatic activation of AudioContext on first click for helper windows
+        if (!isOperator && phase !== 'idle' && !fftAnalyser) {
+          const { resumeAudioContext } = await import('../lib/audioContext');
+          await resumeAudioContext();
+          await initAnalyzer(null, true);
+        }
+        
+        // Existing click behavior (Subtle activation for Visual View)
         if (settings.viewType === 'visuals' && phase === 'main') {
           initAnalyzer(null, true);
         }
@@ -662,28 +681,6 @@ export default function KaraokeStage({
         </div>
       )}
       <AnimatePresence>
-        {!isOperator && phase !== 'idle' && !fftAnalyser && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-12 text-center"
-            onClick={async () => {
-              const { resumeAudioContext } = await import('../lib/audioContext');
-              await resumeAudioContext();
-              await initAnalyzer(null, true);
-            }}
-          >
-            <div className="w-20 h-20 bg-brand-gold/20 rounded-full flex items-center justify-center text-brand-gold mb-6 animate-pulse">
-               <Mic size={40} />
-            </div>
-            <h2 className="text-2xl font-display font-bold text-brand-gold mb-2">Initialize Audio Output</h2>
-            <p className="text-white/40 text-[10px] font-mono uppercase tracking-[0.2em] max-w-xs">
-              Click anywhere to activate the real-time visual concert and sync the vocal engine with this display.
-            </p>
-          </motion.div>
-        )}
-
         {phase === 'idle' && settings.viewType === 'operator' && (
           <motion.div
             key="idle"
