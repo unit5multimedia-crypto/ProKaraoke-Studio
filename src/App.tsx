@@ -33,7 +33,8 @@ export default function App() {
   });
   const [settings, setSettings] = useState<KaraokeSettings>(DEFAULT_SETTINGS);
   const [session, setSession] = useState<KaraokeSession>({
-    bumperUrl: null,
+    bumperInUrl: null,
+    bumperOutUrl: null,
     mediaUrl: null,
     backgroundUrl: null,
     isAudioOnly: false,
@@ -81,7 +82,8 @@ export default function App() {
             ...prev,
             mediaUrl: data.mediaUrl,
             isAudioOnly: data.isAudioOnly || false,
-            bumperUrl: data.bumperUrl || null,
+            bumperInUrl: data.bumperInUrl || data.bumperUrl || null,
+            bumperOutUrl: data.bumperOutUrl || null,
             backgroundUrl: data.backgroundUrl || null,
             lyrics: data.lyrics || [],
             bpm: data.bpm || null,

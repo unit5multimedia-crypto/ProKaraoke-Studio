@@ -14,7 +14,8 @@ declare global {
 }
 
 interface KaraokeStageProps {
-  bumperUrl: string | null;
+  bumperInUrl: string | null;
+  bumperOutUrl: string | null;
   mediaUrl: string | null;
   backgroundUrl: string | null;
   isAudioOnly: boolean;
@@ -27,7 +28,8 @@ interface KaraokeStageProps {
 }
 
 export default function KaraokeStage({
-  bumperUrl,
+  bumperInUrl,
+  bumperOutUrl,
   mediaUrl,
   backgroundUrl,
   isAudioOnly,
@@ -38,7 +40,7 @@ export default function KaraokeStage({
   onStateUpdate,
   onMediaUpload,
 }: KaraokeStageProps) {
-  const [phase, setPhase] = useState<'idle' | 'bumper' | 'main' | 'finished'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'bumper' | 'main' | 'outro' | 'finished'>('idle');
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [score, setScore] = useState(0);
@@ -97,10 +99,10 @@ export default function KaraokeStage({
   // Connect analyzer based on view and media type
   useEffect(() => {
     const setupAnalyzer = async () => {
-      // We want analyzer active in bumper and main phases
-      if (phase !== 'main' && phase !== 'bumper') return;
+      // We want analyzer active in bumper, main, and outro phases
+      if (phase !== 'main' && phase !== 'bumper' && phase !== 'outro') return;
 
-      const element = phase === 'bumper' ? bumperRef.current : (isYouTube ? null : mainRef.current);
+      const element = (phase === 'bumper' || phase === 'outro') ? bumperRef.current : (isYouTube ? null : mainRef.current);
       
       // Always try to enable Mic combined with Media (if media is available)
       // This ensures visuals react to both music and singer
@@ -108,7 +110,7 @@ export default function KaraokeStage({
     };
 
     setupAnalyzer();
-  }, [phase, isYouTube, settings.viewType, bumperUrl, mediaUrl]);
+  }, [phase, isYouTube, settings.viewType, bumperInUrl, bumperOutUrl, mediaUrl]);
 
   // Sound FX System (No assets needed, using Oscillator)
   const playSFX = (type: 'win' | 'score' | 'start') => {
@@ -177,7 +179,7 @@ export default function KaraokeStage({
   // Sync playback state with refs
   useEffect(() => {
     if (isPlaying) {
-      if (phase === 'bumper') {
+      if (phase === 'bumper' || phase === 'outro') {
         bumperRef.current?.play().catch(() => {});
       } else if (phase === 'main') {
         if (isYouTube) {
@@ -337,9 +339,9 @@ export default function KaraokeStage({
     const { resumeAudioContext } = await import('../lib/audioContext');
     await resumeAudioContext();
 
-    console.log('Starting show...', { bumperUrl, mediaUrl });
+    console.log('Starting show...', { bumperInUrl, mediaUrl });
     playSFX('start');
-    if (bumperUrl) {
+    if (bumperInUrl) {
       setPhase('bumper');
     } else if (mediaUrl) {
       setPhase('main');
@@ -353,33 +355,57 @@ export default function KaraokeStage({
     // Broadcast if operator
     if (settings.viewType === 'operator') {
       const bc = new BroadcastChannel('karaoke-sync');
-      bc.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperUrl ? 'bumper' : 'main' } });
+      bc.postMessage({ type: 'COMMAND', payload: { action: 'START', phase: bumperInUrl ? 'bumper' : 'main' } });
       bc.close();
     }
   };
 
   const handleBumperEnd = () => {
-    setPhase('main');
+    if (phase === 'bumper') {
+      setPhase('main');
+      if (settings.viewType === 'operator') {
+        const bc = new BroadcastChannel('karaoke-sync');
+        bc.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'main' } });
+        bc.close();
+      }
+    } else if (phase === 'outro') {
+      setPhase('finished');
+      finishShow();
+    }
   };
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLMediaElement>) => {
     setCurrentTime(e.currentTarget.currentTime);
   };
 
-  const handleMediaEnd = () => {
-    setPhase('finished');
-    setIsPlaying(false);
+  const finishShow = () => {
     playSFX('win');
     const finalScore = score.toLocaleString();
     setTimeout(() => {
       speak(`Beautiful praise! Your final score is ${finalScore}. To God be the glory!`);
     }, 1000);
-
-    // Auto-advance queue if not operator (operator handles it via tab sync)
-    if (settings.viewType !== 'operator' && queue.length > 0) {
-      // Logic for auto-next can be handled by operator resending media sync
-      // But for now we show the 'Win' screen. 
+    
+    if (settings.viewType === 'operator') {
+      const bc = new BroadcastChannel('karaoke-sync');
+      bc.postMessage({ type: 'COMMAND', payload: { action: 'FINISH' } });
+      bc.close();
     }
+  };
+
+  const handleMediaEnd = () => {
+    if (bumperOutUrl) {
+      setPhase('outro');
+      if (settings.viewType === 'operator') {
+        const bc = new BroadcastChannel('karaoke-sync');
+        bc.postMessage({ type: 'COMMAND', payload: { action: 'PHASE_CHANGE', phase: 'outro' } });
+        bc.close();
+      }
+    } else {
+      setPhase('finished');
+      finishShow();
+    }
+    setIsPlaying(true); // Keep playing for bumper out if active
+    if (!bumperOutUrl) setIsPlaying(false);
   };
 
   const handleReset = () => {
@@ -399,16 +425,51 @@ export default function KaraokeStage({
   useEffect(() => {
     // Session State Sync logic
     const bc = new BroadcastChannel('karaoke-sync');
+    
+    // If we are a helper window, request current state immediately
+    if (settings.viewType !== 'operator') {
+      bc.postMessage({ type: 'SYNC_REQUEST' });
+    }
+
     bc.onmessage = (event) => {
-      if (settings.viewType === 'operator') return;
       const { type, payload } = event.data;
+      
+      // Operator responds to late-join sync requests
+      if (type === 'SYNC_REQUEST' && settings.viewType === 'operator') {
+        bc.postMessage({ 
+          type: 'COMMAND', 
+          payload: { 
+            action: 'SYNC_STATE', 
+            state: { phase, isPlaying, currentTime, score } 
+          } 
+        });
+        return;
+      }
+
+      if (settings.viewType === 'operator') return;
       
       if (type === 'COMMAND') {
         switch (payload.action) {
+          case 'SYNC_STATE':
+            setPhase(payload.state.phase);
+            setIsPlaying(payload.state.isPlaying);
+            // Only sync time if we are significantly behind/ahead to avoid jitter
+            if (payload.state.phase === 'main') {
+              setCurrentTime(payload.state.currentTime);
+            }
+            setScore(payload.state.score);
+            break;
           case 'START':
             setPhase(payload.phase);
             setIsPlaying(true);
             setScore(0);
+            break;
+          case 'PHASE_CHANGE':
+            setPhase(payload.phase);
+            break;
+          case 'FINISH':
+            setPhase('finished');
+            setIsPlaying(false);
             break;
           case 'PAUSE':
             setIsPlaying(payload.state);
@@ -429,7 +490,7 @@ export default function KaraokeStage({
     return () => {
       bc.close();
     };
-  }, [settings.viewType, bumperUrl, mediaUrl]);
+  }, [settings.viewType, phase, isPlaying, currentTime, score]);
 
   // YouTube iframe initialization logic
   useEffect(() => {
@@ -607,8 +668,8 @@ export default function KaraokeStage({
             <div className="flex flex-col gap-6 items-center">
               <button
                 onClick={handleStart}
-                disabled={!mediaUrl && !bumperUrl}
-                className={`px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
+                disabled={!mediaUrl && !bumperInUrl}
+                className={`px-12 py-4 bg-brand-gold text-black font-bold rounded-full transition-all flex items-center gap-3 mx-auto ${(!mediaUrl && !bumperInUrl) ? 'opacity-30 cursor-not-allowed scale-95' : 'hover:scale-105 shadow-[0_0_30px_rgba(255,215,0,0.3)]'}`}
               >
                 <Play size={24} fill="currentColor" /> START SHOW
               </button>
@@ -643,9 +704,9 @@ export default function KaraokeStage({
           </motion.div>
         )}
 
-        {phase === 'bumper' && bumperUrl && (
+        {(phase === 'bumper' || phase === 'outro') && (bumperInUrl || bumperOutUrl) && (
           <motion.div
-            key="bumper"
+            key={phase}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -654,20 +715,23 @@ export default function KaraokeStage({
           >
             <video
               ref={bumperRef}
-              src={bumperUrl}
+              src={phase === 'bumper' ? bumperInUrl! : bumperOutUrl!}
               autoPlay
               playsInline
               crossOrigin="anonymous"
               onEnded={handleBumperEnd}
               onError={() => {
-                console.error("Bumper failed to load, skipping to main show");
-                setPhase('main');
+                console.error("Bumper failed to load, skipping phase");
+                if (phase === 'bumper') setPhase('main');
+                else { setPhase('finished'); finishShow(); }
               }}
               className="w-full h-full object-cover"
             />
             <div className="absolute top-8 left-8 flex items-center gap-2 bg-black/50 px-4 py-2 rounded-full backdrop-blur-md">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-xs font-mono uppercase tracking-widest">Pre-Show Active</span>
+              <span className="text-xs font-mono uppercase tracking-widest">
+                {phase === 'bumper' ? 'Pre-Show Active' : 'Post-Show Active'}
+              </span>
             </div>
           </motion.div>
         )}

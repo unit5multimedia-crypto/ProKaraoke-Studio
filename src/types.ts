@@ -34,12 +34,14 @@ export interface SongQueueItem {
   lyrics: LyricLine[];
   bpm?: number | null;
   musicalKey?: string | null;
-  bumperUrl?: string | null;
+  bumperInUrl?: string | null;
+  bumperOutUrl?: string | null;
   status?: 'idle' | 'downloading' | 'ready';
 }
 
 export interface KaraokeSession {
-  bumperUrl: string | null;
+  bumperInUrl: string | null;
+  bumperOutUrl: string | null;
   mediaUrl: string | null;
   backgroundUrl: string | null;
   isAudioOnly: boolean;

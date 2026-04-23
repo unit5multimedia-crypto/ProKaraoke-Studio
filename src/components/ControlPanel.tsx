@@ -204,7 +204,8 @@ export default function ControlPanel({
       isAudioOnly: audioOnly,
       bpm: item.bpm || null,
       musicalKey: item.musicalKey || null,
-      bumperUrl: item.bumperUrl || session.bumperUrl
+      bumperInUrl: item.bumperInUrl || session.bumperInUrl,
+      bumperOutUrl: item.bumperOutUrl || session.bumperOutUrl
     };
 
     setSession(prev => ({
@@ -442,33 +443,60 @@ export default function ControlPanel({
                            <p className="text-[9px] font-mono text-white/30 truncate">
                              {item.status === 'downloading' ? 'DOWNLOADING...' : (item.mediaUrl.includes('google') ? 'Cloud Source' : 'Local Source')}
                            </p>
-                           {item.bumperUrl ? (
-                             <span className="text-[8px] bg-brand-gold/10 text-brand-gold px-1.5 py-0.5 rounded border border-brand-gold/20 flex items-center gap-1">
-                               <Video size={8} /> BUMPER
-                             </span>
-                           ) : (
-                             <button 
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 const input = document.createElement('input');
-                                 input.type = 'file';
-                                 input.accept = 'video/*';
-                                 input.onchange = (ev: any) => {
-                                   const file = ev.target.files[0];
-                                   if (file) {
-                                     const url = URL.createObjectURL(file);
-                                     const newQueue = [...queue];
-                                     newQueue[i].bumperUrl = url;
-                                     saveQueue(newQueue);
-                                   }
-                                 };
-                                 input.click();
-                               }}
-                               className="text-[8px] text-white/20 hover:text-brand-gold underline"
-                             >
-                               SET BUMPER
-                             </button>
-                           )}
+                           <div className="flex gap-2">
+                             {item.bumperInUrl ? (
+                               <span className="text-[7px] bg-brand-gold/10 text-brand-gold px-1 py-0.5 rounded border border-brand-gold/20 flex items-center gap-0.5">
+                                 <Video size={7} /> INTRO
+                               </span>
+                             ) : (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   const input = document.createElement('input');
+                                   input.type = 'file'; input.accept = 'video/*';
+                                   input.onchange = (ev: any) => {
+                                     const file = ev.target.files[0];
+                                     if (file) {
+                                       const url = URL.createObjectURL(file);
+                                       const newQueue = [...queue];
+                                       newQueue[i].bumperInUrl = url;
+                                       saveQueue(newQueue);
+                                     }
+                                   };
+                                   input.click();
+                                 }}
+                                 className="text-[7px] text-white/20 hover:text-brand-gold underline"
+                               >
+                                 SET INTRO
+                               </button>
+                             )}
+                             {item.bumperOutUrl ? (
+                               <span className="text-[7px] bg-blue-500/10 text-blue-400 px-1 py-0.5 rounded border border-blue-500/20 flex items-center gap-0.5">
+                                 <Video size={7} /> OUTRO
+                               </span>
+                             ) : (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   const input = document.createElement('input');
+                                   input.type = 'file'; input.accept = 'video/*';
+                                   input.onchange = (ev: any) => {
+                                     const file = ev.target.files[0];
+                                     if (file) {
+                                       const url = URL.createObjectURL(file);
+                                       const newQueue = [...queue];
+                                       newQueue[i].bumperOutUrl = url;
+                                       saveQueue(newQueue);
+                                     }
+                                   };
+                                   input.click();
+                                 }}
+                                 className="text-[7px] text-white/20 hover:text-blue-400 underline"
+                               >
+                                 SET OUTRO
+                               </button>
+                             )}
+                           </div>
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -683,7 +711,8 @@ export default function ControlPanel({
                                         mediaUrl: tempUrl, // fallback
                                         lyrics: [],
                                         status: 'downloading',
-                                        bumperUrl: session.bumperUrl
+                                        bumperInUrl: session.bumperInUrl,
+                                        bumperOutUrl: session.bumperOutUrl
                                       };
                                       
                                       const updatedQueue = [...queue, newItem];
@@ -759,7 +788,8 @@ export default function ControlPanel({
                                             title: file.name,
                                             mediaUrl: url,
                                             lyrics: [],
-                                            bumperUrl: session.bumperUrl
+                                            bumperInUrl: session.bumperInUrl,
+                                            bumperOutUrl: session.bumperOutUrl
                                           };
                                           saveQueue([...queue, newItem]);
                                           setActiveTab('queue');
@@ -787,16 +817,18 @@ export default function ControlPanel({
                          <input type="file" className="hidden" accept=".txt,.lrc" onChange={handleFileUpload('lyrics' as any)} />
                        </label>
 
-                       <label className="flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/20 rounded-2xl hover:border-brand-gold/50 cursor-pointer transition-all group opacity-60">
-                         <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white/40 group-hover:scale-110 transition-transform">
-                            <ImageIcon size={24} />
-                         </div>
-                         <div className="flex-1">
-                            <h4 className="text-xs font-bold text-white mb-1 uppercase tracking-wider">Bumper Clip</h4>
-                            <p className="text-[10px] text-white/30 font-mono">Branding Video...</p>
-                         </div>
-                         <input type="file" className="hidden" accept="video/*" onChange={handleFileUpload('bumperUrl')} />
-                       </label>
+                       <div className="grid grid-cols-2 gap-3 p-4 bg-white/5 border border-dashed border-white/20 rounded-2xl">
+                          <label className="flex flex-col items-center gap-2 p-3 bg-black/40 rounded-xl hover:border-brand-gold/50 cursor-pointer transition-all border border-white/5">
+                             <Video size={20} className="text-brand-gold" />
+                             <span className="text-[9px] font-bold uppercase tracking-widest text-white/60">Bumper IN</span>
+                             <input type="file" className="hidden" accept="video/*" onChange={handleFileUpload('bumperInUrl')} />
+                          </label>
+                          <label className="flex flex-col items-center gap-2 p-3 bg-black/40 rounded-xl hover:border-blue-500/50 cursor-pointer transition-all border border-white/5">
+                             <Video size={20} className="text-blue-400" />
+                             <span className="text-[9px] font-bold uppercase tracking-widest text-white/60">Bumper OUT</span>
+                             <input type="file" className="hidden" accept="video/*" onChange={handleFileUpload('bumperOutUrl')} />
+                          </label>
+                       </div>
                     </div>
 
                     <div className="p-4 bg-brand-gold/5 border border-brand-gold/10 rounded-2xl">
