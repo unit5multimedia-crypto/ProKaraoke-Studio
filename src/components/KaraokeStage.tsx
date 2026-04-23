@@ -440,7 +440,18 @@ export default function KaraokeStage({
           type: 'COMMAND', 
           payload: { 
             action: 'SYNC_STATE', 
-            state: { phase, isPlaying, currentTime, score, bumperInUrl, bumperOutUrl, mediaUrl, lyrics } 
+            state: { 
+              phase, 
+              isPlaying, 
+              currentTime, 
+              score, 
+              bumperInUrl, 
+              bumperOutUrl, 
+              mediaUrl, 
+              lyrics,
+              bpm,
+              musicalKey
+            } 
           } 
         });
         return;
@@ -451,19 +462,14 @@ export default function KaraokeStage({
       if (type === 'COMMAND') {
         switch (payload.action) {
           case 'SYNC_STATE':
-            setPhase(payload.state.phase);
-            setIsPlaying(payload.state.isPlaying);
-            // Only sync time if we are significantly behind/ahead to avoid jitter
-            if (payload.state.phase === 'main') {
-              setCurrentTime(payload.state.currentTime);
-            }
-            setScore(payload.state.score);
-            // Ensure media is also synced for late joiners
-            if (payload.state.mediaUrl && payload.state.mediaUrl !== mediaUrl) {
-                // This might need to call onMediaUpload or similar, but for now we assume session syncs via sync_state
-                // We actually need to ensure the props passed to KaraokeStage are updated.
-                // Since props come from App.tsx session, we might need a message to App.tsx too.
-                // But KaraokeStage is self-contained for many things.
+            // Only update local state if phase or isPlaying changed to avoid jitter
+            if (payload.state.phase !== phase) setPhase(payload.state.phase);
+            if (payload.state.isPlaying !== isPlaying) setIsPlaying(payload.state.isPlaying);
+            if (payload.state.score !== score) setScore(payload.state.score);
+            
+            // Sync time if significantly different or if just starting
+            if (Math.abs(payload.state.currentTime - currentTime) > 2) {
+                setCurrentTime(payload.state.currentTime);
             }
             break;
           case 'START':
@@ -789,14 +795,11 @@ export default function KaraokeStage({
 
             {/* Media Player Layer */}
             {isYouTube ? (
-              <div className={`absolute inset-0 z-20 bg-black pointer-events-none overflow-hidden ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
-                {/* 15% Crop to hide YouTube title bar and UI elements */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[110%] h-[120%] pointer-events-auto">
-                  <div 
-                    ref={ytContainerRef}
-                    className="w-full h-full object-cover transition-all duration-1000"
-                  />
-                </div>
+              <div className={`absolute inset-0 z-20 bg-black pointer-events-none ${settings.viewType === 'visuals' ? 'opacity-0' : 'opacity-100'}`}>
+                <div 
+                  ref={ytContainerRef}
+                  className="w-full h-full object-cover transition-all duration-1000 pointer-events-auto"
+                />
                 
                 {/* Interaction Shield - Transparent overlay for Videoke look */}
                 <div className="absolute inset-0 z-[25] bg-transparent" />

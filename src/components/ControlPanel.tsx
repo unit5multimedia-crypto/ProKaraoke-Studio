@@ -204,8 +204,8 @@ export default function ControlPanel({
       isAudioOnly: audioOnly,
       bpm: item.bpm || null,
       musicalKey: item.musicalKey || null,
-      bumperInUrl: item.bumperInUrl || null,
-      bumperOutUrl: item.bumperOutUrl || null
+      bumperInUrl: item.bumperInUrl || session.bumperInUrl,
+      bumperOutUrl: item.bumperOutUrl || session.bumperOutUrl
     };
 
     setSession(prev => ({

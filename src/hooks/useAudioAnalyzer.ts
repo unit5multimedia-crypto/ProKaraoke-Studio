@@ -11,7 +11,7 @@ export function useAudioAnalyzer(isActive: boolean) {
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   const initAnalyzer = async (element: HTMLMediaElement | null, enableMic: boolean = true) => {
-    if (!element) return;
+    if (!element && !enableMic) return;
     
     const ctx = getAudioContext();
     await resumeAudioContext();
@@ -27,7 +27,7 @@ export function useAudioAnalyzer(isActive: boolean) {
     if (!currentAnalyser) return; 
 
     // Handle Media Element (Music)
-    if (element instanceof HTMLMediaElement) {
+    if (element && element instanceof HTMLMediaElement) {
       // Check if already registered or currently being initialized
       if (mediaSourceRegistry.has(element)) {
         const existingSource = mediaSourceRegistry.get(element);

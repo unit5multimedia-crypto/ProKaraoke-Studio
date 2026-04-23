@@ -75,20 +75,36 @@ export default function App() {
       // If we are NOT the operator, handle sync state from operator
       if (settings.viewType !== 'operator' && type === 'COMMAND' && payload.action === 'SYNC_STATE') {
         const { state } = payload;
-        setSession(prev => ({
-          ...prev,
-          mediaUrl: state.mediaUrl || prev.mediaUrl,
-          bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
-          bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
-          lyrics: state.lyrics || prev.lyrics
-        }));
         
-        setPlaybackState(prev => ({
-          ...prev,
-          phase: state.phase,
-          isPlaying: state.isPlaying,
-          currentTime: state.currentTime,
-        }));
+        // Only update session if media changed to avoid unnecessary re-renders/YouTube reloads
+        setSession(prev => {
+          const hasChanged = 
+            state.mediaUrl !== prev.mediaUrl || 
+            state.bumperInUrl !== prev.bumperInUrl ||
+            state.bumperOutUrl !== prev.bumperOutUrl;
+            
+          if (!hasChanged) return prev;
+
+          return {
+            ...prev,
+            mediaUrl: state.mediaUrl || prev.mediaUrl,
+            bumperInUrl: state.bumperInUrl || prev.bumperInUrl,
+            bumperOutUrl: state.bumperOutUrl || prev.bumperOutUrl,
+            lyrics: state.lyrics || prev.lyrics,
+            bpm: state.bpm || prev.bpm,
+            musicalKey: state.musicalKey || prev.musicalKey
+          };
+        });
+        
+        setPlaybackState(prev => {
+           if (prev.phase === state.phase && prev.isPlaying === state.isPlaying) return prev;
+           return {
+              ...prev,
+              phase: state.phase,
+              isPlaying: state.isPlaying,
+              currentTime: state.currentTime,
+           };
+        });
       }
     };
     return () => bc.close();
