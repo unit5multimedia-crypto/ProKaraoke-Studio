@@ -89,8 +89,14 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
     // Uniforms
     const iTimeLoc = gl.getUniformLocation(program, "iTime");
     const iResLoc = gl.getUniformLocation(program, "iResolution");
+    const iMouseLoc = gl.getUniformLocation(program, "iMouse");
+    const iDateLoc = gl.getUniformLocation(program, "iDate");
+    const iFrameLoc = gl.getUniformLocation(program, "iFrame");
     const sensitivityLoc = gl.getUniformLocation(program, "u_sensitivity");
     const channel0Loc = gl.getUniformLocation(program, "iChannel0");
+    const channel1Loc = gl.getUniformLocation(program, "iChannel1");
+    const channel2Loc = gl.getUniformLocation(program, "iChannel2");
+    const channel3Loc = gl.getUniformLocation(program, "iChannel3");
 
     // Audio Texture Setup
     const audioTexture = gl.createTexture();
@@ -106,6 +112,7 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
     
     let animationId: number;
     let startTime = performance.now();
+    let frameCount = 0;
 
     const render = (time: number) => {
       const { offsetWidth: width, offsetHeight: height } = canvas;
@@ -128,9 +135,18 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
 
       gl.useProgram(program);
       gl.uniform1f(iTimeLoc, (time - startTime) / 1000.0);
-      gl.uniform2f(iResLoc, canvas.width, canvas.height);
+      gl.uniform3f(iResLoc, canvas.width, canvas.height, 1.0);
+      if (iMouseLoc) gl.uniform4f(iMouseLoc, 0.0, 0.0, 0.0, 0.0);
+      if (iDateLoc) {
+         const d = new Date();
+         gl.uniform4f(iDateLoc, d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000.0);
+      }
+      if (iFrameLoc) gl.uniform1i(iFrameLoc, frameCount++);
       gl.uniform1f(sensitivityLoc, sensitivity);
       gl.uniform1i(channel0Loc, 0);
+      if (channel1Loc) gl.uniform1i(channel1Loc, 0); // fallback to audio context for now
+      if (channel2Loc) gl.uniform1i(channel2Loc, 0);
+      if (channel3Loc) gl.uniform1i(channel3Loc, 0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 

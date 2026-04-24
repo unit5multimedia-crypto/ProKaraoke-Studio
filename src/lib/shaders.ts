@@ -118,11 +118,20 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 // Default boilerplate to compile Shadertoy-like code
 export const SHADER_BOILERPLATE = `
 precision highp float;
+uniform vec3 iResolution;
 uniform float iTime;
-uniform vec2 iResolution;
-uniform sampler2D iChannel0; // Audio FFT texture
+uniform float iTimeDelta;
+uniform float iFrameRate;
+uniform int iFrame;
+uniform vec4 iMouse;
+uniform vec4 iDate;
+uniform sampler2D iChannel0; // Audio FFT texture (Usually channel 0)
+uniform sampler2D iChannel1;
+uniform sampler2D iChannel2;
+uniform sampler2D iChannel3;
 uniform float u_sensitivity; // Scale multiplier from settings
 
+// Shadertoy standard output
 out vec4 fragColor;
 
 // --- USER CODE START ---
