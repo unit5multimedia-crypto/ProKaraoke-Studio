@@ -63,15 +63,22 @@ export function useVocalEngine(
         delay.connect(echoGain);
         echoGain.connect(ctx.destination);
 
+        let lastUpdate = 0;
         const timeData = new Float32Array(analyser.fftSize);
-        const loop = () => {
+        const loop = (timestamp: number) => {
           if (!isMounted) return;
-          analyser.getFloatTimeDomainData(timeData);
-          const p = detectPitch(timeData, ctx.sampleRate);
-          setPitch(p);
+          
+          if (timestamp - lastUpdate > 100) {
+            analyser.getFloatTimeDomainData(timeData);
+            const p = detectPitch(timeData, ctx.sampleRate);
+            if (p !== null) { // only update state if valid pitch or throttling
+               setPitch(p);
+            }
+            lastUpdate = timestamp;
+          }
           requestAnimationFrame(loop);
         };
-        loop();
+        requestAnimationFrame(loop);
 
         engineRef.current = { ctx, stream, micGain, echoGain };
       } catch (e) {
