@@ -2,12 +2,27 @@ import { useState, useEffect, useRef } from 'react';
 import { detectPitch } from '../lib/pitchDetection';
 import { getAudioContext, resumeAudioContext } from '../lib/audioContext';
 
+function createReverbImpulse(ctx: AudioContext, duration: number, decay: number) {
+  const sampleRate = ctx.sampleRate;
+  const length = sampleRate * duration;
+  const impulse = ctx.createBuffer(2, length, sampleRate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+  for (let i = 0; i < length; i++) {
+    const factor = Math.pow(1 - i / length, decay);
+    left[i] = (Math.random() * 2 - 1) * factor;
+    right[i] = (Math.random() * 2 - 1) * factor;
+  }
+  return impulse;
+}
+
 export function useVocalEngine(
   isActive: boolean,
   deviceId?: string,
   outputId?: string,
   volume: number = 0.8,
-  echo: number = 0.3
+  echo: number = 0.3,
+  reverb: number = 0.3
 ) {
   const [pitch, setPitch] = useState<number | null>(null);
   const engineRef = useRef<any>(null);
@@ -63,6 +78,11 @@ export function useVocalEngine(
         const echoGain = ctx.createGain();
         echoGain.gain.value = echo;
 
+        const convolver = ctx.createConvolver();
+        convolver.buffer = createReverbImpulse(ctx, 2.5, 2.0); // 2.5 second reverb, moderate decay
+        const reverbGain = ctx.createGain();
+        reverbGain.gain.value = reverb;
+
         source.connect(analyser); 
         source.connect(micGain);
         micGain.connect(ctx.destination);
@@ -72,6 +92,10 @@ export function useVocalEngine(
         delayFeedback.connect(delay);
         delay.connect(echoGain);
         echoGain.connect(ctx.destination);
+        
+        source.connect(convolver);
+        convolver.connect(reverbGain);
+        reverbGain.connect(ctx.destination);
 
         let lastUpdate = 0;
         const timeData = new Float32Array(analyser.fftSize);

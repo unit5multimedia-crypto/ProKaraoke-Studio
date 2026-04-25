@@ -25,6 +25,7 @@ export interface KaraokeSettings {
   micOutputId?: string;   // mic specific output
   micVolume?: number;     // 0.0 to 1.0
   micEcho?: number;       // 0.0 to 1.0
+  micReverb?: number;     // 0.0 to 1.0
   mediaVolume?: number;   // 0.0 to 1.0
   vocalCut?: boolean;     // Enable multiplex vocal reduction
 }
@@ -67,6 +68,7 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   audioReactivity: 0.5,
   micVolume: 0.8,
   micEcho: 0.3,
+  micReverb: 0.3,
   mediaVolume: 1.0,
   vocalCut: false
 };

@@ -991,6 +991,17 @@ export default function ControlPanel({
                         className="w-full h-1 accent-green-400" 
                       />
                     </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="flex justify-between text-[8px] font-mono text-blue-400">
+                        <span>REVERB FX</span><span>{Math.round((settings.micReverb ?? 0.3) * 100)}%</span>
+                      </label>
+                      <input 
+                        type="range" min="0" max="1" step="0.05" 
+                        value={settings.micReverb ?? 0.3} 
+                        onChange={(e) => updateSetting('micReverb', parseFloat(e.target.value))} 
+                        className="w-full h-1 accent-blue-400" 
+                      />
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">

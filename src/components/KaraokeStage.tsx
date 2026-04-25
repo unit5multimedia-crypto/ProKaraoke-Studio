@@ -100,7 +100,8 @@ export default function KaraokeStage({
     settings.audioDeviceId, 
     settings.micOutputId || settings.audioOutputId,
     settings.micVolume ?? 0.8,
-    settings.micEcho ?? 0.3
+    settings.micEcho ?? 0.3,
+    settings.micReverb ?? 0.3
   );
   
   // Pass true for mic to keep visuals reactive, and pass settings for vocalCut
