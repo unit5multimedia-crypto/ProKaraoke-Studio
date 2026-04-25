@@ -18,7 +18,7 @@ interface KaraokeStageProps {
   bumperInUrl: string | null;
   bumperOutUrl: string | null;
   mediaUrl: string | null;
-  backgroundUrl: string | null;
+  backgroundUrl: string | null;   
   isAudioOnly: boolean;
   lyrics: LyricLine[];
   settings: KaraokeSettings;
