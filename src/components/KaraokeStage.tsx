@@ -103,7 +103,8 @@ export default function KaraokeStage({
     settings.micEcho ?? 0.3
   );
   
-  const { analyser: fftAnalyser, initAnalyzer } = useAudioAnalyzer(isPlaying && (phase === 'main' || phase === 'bumper'));
+  // Pass true for mic to keep visuals reactive, and pass settings for vocalCut
+  const { analyser: fftAnalyser, initAnalyzer } = useAudioAnalyzer(isPlaying && (phase === 'main' || phase === 'bumper'), { vocalCut: settings.vocalCut, mediaVolume: settings.mediaVolume });
 
   useEffect(() => {
     if (settings.audioOutputId && mainRef.current && typeof (mainRef.current as any).setSinkId === 'function') {
@@ -745,6 +746,8 @@ export default function KaraokeStage({
                   theme={settings.visualTheme} 
                   sensitivity={settings.audioReactivity} 
                   customGLSL={settings.customGLSL}
+                  bpm={bpm}
+                  currentTime={currentTime}
                 />
               )}
             </div>

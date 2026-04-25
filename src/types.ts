@@ -26,6 +26,7 @@ export interface KaraokeSettings {
   micVolume?: number;     // 0.0 to 1.0
   micEcho?: number;       // 0.0 to 1.0
   mediaVolume?: number;   // 0.0 to 1.0
+  vocalCut?: boolean;     // Enable multiplex vocal reduction
 }
 
 export interface SongQueueItem {
@@ -66,7 +67,8 @@ export const DEFAULT_SETTINGS: KaraokeSettings = {
   audioReactivity: 0.5,
   micVolume: 0.8,
   micEcho: 0.3,
-  mediaVolume: 1.0
+  mediaVolume: 1.0,
+  vocalCut: false
 };
 
 export interface OBSProjectorConfig {

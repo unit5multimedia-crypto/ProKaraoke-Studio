@@ -6,9 +6,10 @@ import { getAudioContext, resumeAudioContext } from '../lib/audioContext';
 const mediaSourceRegistry = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
 const pendingInitializations = new WeakSet<HTMLMediaElement>();
 
-export function useAudioAnalyzer(isActive: boolean) {
+export function useAudioAnalyzer(isActive: boolean, settings?: { vocalCut?: boolean; mediaVolume?: number }) {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const effectsNodesRef = useRef<{splitter?: ChannelSplitterNode, merger?: ChannelMergerNode, gainL?: GainNode, gainR?: GainNode, masterGain?: GainNode, invertGain?: GainNode} | null>(null);
 
   useEffect(() => {
     if (!isActive) {
@@ -34,21 +35,88 @@ export function useAudioAnalyzer(isActive: boolean) {
 
     // Handle Media Element (Music)
     if (element && element instanceof HTMLMediaElement) {
+      
+      // Cleanup previous effects if changing
+      if (!effectsNodesRef.current) {
+         effectsNodesRef.current = { masterGain: ctx.createGain() };
+         effectsNodesRef.current.masterGain!.connect(ctx.destination);
+         effectsNodesRef.current.masterGain!.connect(currentAnalyser);
+      }
+      
+      // Update master gain
+      if (effectsNodesRef.current.masterGain) {
+         effectsNodesRef.current.masterGain.gain.value = settings?.mediaVolume !== undefined ? settings.mediaVolume : 1.0;
+      }
+
       if (mediaSourceRegistry.has(element)) {
         const existingSource = mediaSourceRegistry.get(element);
         if (existingSource) {
            try { 
-             existingSource.connect(currentAnalyser); 
-             existingSource.connect(ctx.destination);
+              existingSource.disconnect();
+              
+              if (settings?.vocalCut) {
+                 if (!effectsNodesRef.current.splitter) {
+                    const splitter = ctx.createChannelSplitter(2);
+                    const merger = ctx.createChannelMerger(2);
+                    const gainL = ctx.createGain();
+                    const gainR = ctx.createGain();
+                    const invertGain = ctx.createGain();
+                    
+                    invertGain.gain.value = -1; // Invert phase
+                    
+                    existingSource.connect(splitter);
+                    
+                    // Left channel to Left Merge
+                    splitter.connect(gainL, 0);
+                    gainL.connect(merger, 0, 0);
+                    gainL.connect(merger, 0, 1);
+                    
+                    // Right channel inverted to Left Merge
+                    splitter.connect(invertGain, 1);
+                    invertGain.connect(merger, 0, 0);
+                    invertGain.connect(merger, 0, 1);
+                    
+                    merger.connect(effectsNodesRef.current.masterGain!);
+                    
+                    effectsNodesRef.current = { ...effectsNodesRef.current, splitter, merger, gainL, gainR, invertGain };
+                 } else {
+                    existingSource.connect(effectsNodesRef.current.splitter!);
+                 }
+              } else {
+                 existingSource.connect(effectsNodesRef.current.masterGain!);
+              }
            } catch(e) {}
         }
       } else if (!pendingInitializations.has(element)) {
         pendingInitializations.add(element);
         try {
           const mSource = ctx.createMediaElementSource(element);
-          mSource.connect(currentAnalyser);
-          mSource.connect(ctx.destination);
           mediaSourceRegistry.set(element, mSource);
+          
+          if (settings?.vocalCut) {
+             const splitter = ctx.createChannelSplitter(2);
+             const merger = ctx.createChannelMerger(2);
+             const gainL = ctx.createGain();
+             const gainR = ctx.createGain();
+             const invertGain = ctx.createGain();
+             
+             invertGain.gain.value = -1;
+             
+             mSource.connect(splitter);
+             splitter.connect(gainL, 0);
+             gainL.connect(merger, 0, 0);
+             gainL.connect(merger, 0, 1);
+             
+             splitter.connect(invertGain, 1);
+             invertGain.connect(merger, 0, 0);
+             invertGain.connect(merger, 0, 1);
+             
+             merger.connect(effectsNodesRef.current.masterGain!);
+             
+             effectsNodesRef.current = { ...effectsNodesRef.current, splitter, merger, gainL, gainR, invertGain };
+          } else {
+             mSource.connect(effectsNodesRef.current.masterGain!);
+          }
           console.log("AudioAnalyzer: Connected new media element to destination");
         } catch (e) {
           console.warn("Media capture blocked or already initialized in registry:", e);

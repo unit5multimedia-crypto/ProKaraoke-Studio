@@ -411,6 +411,13 @@ export default function ControlPanel({
             <Music size={14} />
           </button>
           <button 
+            onClick={() => window.open(window.location.origin + '?view=prompter', 'PrompterWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no')}
+            className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-all shadow-sm border-white/10 text-white/40 hover:border-white/30`}
+            title={"Pop-out Prompter Window"}
+          >
+            <MonitorPlay size={18} />
+          </button>
+          <button 
             onClick={() => updateSetting('viewType', settings.viewType === 'operator' ? 'prompter' : 'operator')}
             className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-all shadow-sm ${settings.viewType !== 'operator' ? 'bg-brand-gold text-black border-brand-gold' : 'border-white/10 text-white/40 hover:border-white/30'}`}
             title={settings.viewType !== 'operator' ? "Exit Performer View" : "Enter Performer View"}
@@ -1026,6 +1033,15 @@ export default function ControlPanel({
                         onChange={(e) => updateSetting('mediaVolume', parseFloat(e.target.value))} 
                         className="w-full h-1 accent-white" 
                       />
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                      <button 
+                        onClick={() => updateSetting('vocalCut', !settings.vocalCut)}
+                        className={`flex-1 py-1 text-[9px] font-bold tracking-wider rounded border transition-colors ${settings.vocalCut ? 'bg-orange-500/20 text-orange-400 border-orange-500/50' : 'bg-white/5 text-white/40 border-white/10 hover:border-white/30'}`}
+                        title="Phase Cancellation Vocal Cut (Multiplex) - For MP3/MP4 Local/Drive files only"
+                      >
+                        {settings.vocalCut ? 'VOCAL CUT: ON' : 'VOCAL CUT: OFF'}
+                      </button>
                   </div>
                 </div>
 

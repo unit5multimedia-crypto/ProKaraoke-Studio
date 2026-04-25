@@ -29,9 +29,19 @@ export function useVocalEngine(
 
     const setup = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: deviceId ? { deviceId: { exact: deviceId } } : true
-        });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: (deviceId && deviceId !== "default") ? { deviceId: { exact: deviceId } } : true
+          });
+        } catch (e: any) {
+          if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+            console.warn("Requested mic not found, falling back to default");
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } else {
+            throw e;
+          }
+        }
 
         if (outputId && typeof (ctx as any).setSinkId === 'function') {
           try { await (ctx as any).setSinkId(outputId); } catch(e) { console.error("Sink ID error", e); }

@@ -6,6 +6,8 @@ interface VisualBackgroundProps {
   theme: string;
   sensitivity: number;
   customGLSL?: string;
+  bpm?: number | null;
+  currentTime?: number;
 }
 
 const vertexShaderSource = `#version 300 es
@@ -15,8 +17,14 @@ void main() {
 }
 `;
 
-export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, theme, sensitivity, customGLSL }) => {
+export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, theme, sensitivity, customGLSL, bpm, currentTime = 0 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const playStateRef = useRef({ bpm: bpm || 120, currentTime: 0 });
+
+  useEffect(() => {
+     playStateRef.current.bpm = bpm || 120;
+     playStateRef.current.currentTime = currentTime;
+  }, [bpm, currentTime]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -24,7 +32,7 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
     
     // Fallback if theme not found
     const activeTheme = theme === 'custom' && customGLSL 
-      ? { glsl: customGLSL }
+      ? { glsl: customGLSL.replace(/float3/g, 'vec3').replace(/float2/g, 'vec2').replace(/float4/g, 'vec4').replace(/half3/g, 'vec3') }
       : PRESET_SHADERS[theme] || PRESET_SHADERS['nebula'];
       
     const currentGLSL = SHADER_BOILERPLATE.replace('${USER_GLSL}', activeTheme.glsl);
@@ -126,6 +134,26 @@ export const VisualBackground: React.FC<VisualBackgroundProps> = ({ analyser, th
         analyser.getByteFrequencyData(fftData);
       } else {
         fftData.fill(0);
+      }
+
+      // Calculate synthetic beat if actual audio data is flat (like Youtube CORS blocked)
+      let isFlat = true;
+      for (let i = 0; i < 20; i++) {
+        if (fftData[i] > 10) { isFlat = false; break; }
+      }
+      
+      const pState = playStateRef.current;
+      if (isFlat && pState.currentTime > 0) {
+        const beatInterval = 60.0 / pState.bpm;
+        const beatPhase = (pState.currentTime % beatInterval) / beatInterval;
+        // sharp decay
+        const kick = Math.max(0, 1.0 - beatPhase * 4.0);
+        const snare = Math.max(0, 1.0 - ((beatPhase + 0.5) % 1.0) * 4.0);
+        
+        // Populate bass (kick)
+        for (let i = 0; i < 10; i++) fftData[i] = kick * 255;
+        // Populate mids (snare)
+        for (let i = 20; i < 40; i++) fftData[i] = snare * 128;
       }
 
       // Update Audio Texture
